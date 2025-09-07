@@ -249,15 +249,6 @@ function HeroOverlay({
             {loading ? '読み込み中…' : '表示する'}
           </button>
 
-          {/* ロード中アニメーション（上品なビーム＋微ドット） */}
-          {loading && (
-            <div className="mt-4 w-56 md:w-72">
-              <div className="relative h-1 overflow-hidden rounded-full bg-white/10">
-                <div className="absolute inset-y-0 left-0 w-1/3 animate-[progress_1200ms_ease_infinite] bg-gradient-to-r from-white/20 via-white/70 to-white/20" />
-              </div>
-              <div className="mt-3 text-[11px] text-gray-400 tracking-widest">Preparing Selection</div>
-            </div>
-          )}
         </div>
 
         {/* ヴィネット */}
@@ -266,10 +257,6 @@ function HeroOverlay({
         }} />
       </div>
 
-      {/* keyframes（インライン定義） */}
-      <style jsx>{`
-        @keyframes progress { 0% { transform: translateX(-120%);} 100% { transform: translateX(260%);} }
-      `}</style>
     </section>
   );
 }
