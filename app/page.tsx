@@ -414,13 +414,12 @@ export default function Page() {
       if (!r.ok) throw new Error(`HTTP ${r.status}`);
       const data: RecommendResponse = await r.json();
       setResults(Array.isArray(data.items) ? data.items : []);
-    } catch (e: any) {
-      try {
-        const msg = e?.message ?? 'エラーが発生しました';
-        setError(msg);
-      } catch {
-        setError('取得に失敗しました。少し時間をおいて再実行してください。');
-      }
+    } catch (e: unknown) {
+      const msg =
+        e instanceof Error
+          ? e.message
+          : '取得に失敗しました。少し時間をおいて再実行してください。';
+      setError(msg);
     } finally {
       setLoading(false);
     }
