@@ -1,5 +1,6 @@
 'use client';
-import { useEffect, useState, type CSSProperties } from 'react';
+import { useEffect, useRef, useState, type CSSProperties } from 'react';
+import { RealtimeClient } from '@/lib/realtimeClient';
 
 /** 任意の速度でスクロール（CSS smooth より滑らかに） */
 function smoothScrollTo(targetY: number, duration = 1200) {
@@ -324,6 +325,33 @@ export default function Page() {
   const [resultsPhase, setResultsPhase] = useState<'shown' | 'collapsing' | 'hidden'>('hidden');
   const [overlayPhase, setOverlayPhase] = useState<'idle' | 'leaving' | 'gone'>('idle');
 
+  // for realtime chat 
+  const [voiceState, setVoiceState] = useState<'idle'|'connecting'|'recording'|'thinking'|'ended'>('idle')
+  const clientRef = useRef<RealtimeClient | null>(null)
+  const [assistantPreview, setAssistantPreview] = useState('')
+
+  async function startVoice() {
+    if (!clientRef.current) {
+      clientRef.current = new RealtimeClient({
+        onState: setVoiceState,
+        onUserTranscript: (t) => {
+          // 受け取ったユーザー発話をtextareaに追記
+          setText(prev => (prev ? prev + '\n' : '') + t)
+        },
+        onAssistantText: (delta, done) => {
+          // 進行中のAI返答をプレビュー表示（任意）
+          setAssistantPreview(prev => done ? prev : prev + delta)
+          if (done) setAssistantPreview((p) => p + '\n')
+        },
+      })
+    }
+    await clientRef.current.start()
+  }
+
+  async function stopVoice() {
+    await clientRef.current?.stop()
+  }
+
   // NEW: フィルタ
   const [country, setCountry] = useState<string>(''); // '', 'japan', 'korea', 'india', 'other'
   const [genres, setGenres] = useState<string[]>([]);
@@ -523,6 +551,43 @@ export default function Page() {
               </button>
             ))}
           </div>
+
+{/* Voice ボタン + 状態表示 */}
+      <div className="mt-3 flex items-center gap-3">
+        {voiceState === 'idle' || voiceState === 'ended' ? (
+          <button
+            type="button"
+            onClick={startVoice}
+            className="inline-flex items-center gap-2 rounded-xl border border-white/20 bg-black/40 px-3 py-2 text-sm text-gray-200 hover:border-red-500 hover:text-white transition"
+            aria-label="ボイス入力を開始"
+          >
+            <span aria-hidden>🎙️</span> Voiceで話す
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={stopVoice}
+            className="inline-flex items-center gap-2 rounded-xl border border-red-500/70 bg-red-500/10 px-3 py-2 text-sm text-red-300 hover:bg-red-500/20 transition"
+            aria-label="ボイス入力を停止"
+          >
+            <span aria-hidden>⏹️</span>  停止
+          </button>
+        )}
+
+        <span className="text-xs text-gray-400">
+          {voiceState === 'connecting' && '接続中…'}
+          {voiceState === 'recording' && '録音中（話しかけてOK）'}
+          {voiceState === 'thinking' && 'AIが考え中…'}
+          {voiceState === 'ended' && '終了'}
+        </span>
+      </div>
+
+      {/* AI返答のプレビュー（任意） */}
+      {assistantPreview && (
+        <div className="mt-3 rounded-xl border border-white/10 bg-black/40 p-3 text-sm text-gray-200 whitespace-pre-wrap">
+          {assistantPreview}
+        </div>
+      )}
 
 
           {/* 送信ボタン */}
