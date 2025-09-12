@@ -64,11 +64,16 @@ export function StreamingLinks({ tmdbId }: StreamingLinksProps) {
     ) : null;
   }
 
+  // 重複した配信サイトを除去（同じservice.idの場合、最初のもののみ残す）
+  const uniqueServices = services.filter((service, index, array) => 
+    array.findIndex(s => s.service.id === service.service.id) === index
+  );
+
   return (
     <div className="mt-3">
       <div className="text-xs text-gray-400 mb-2">配信中：</div>
       <div className="flex flex-wrap gap-2">
-        {services.map((service, index) => (
+        {uniqueServices.map((service, index) => (
           <a
             key={`${service.service.id}-${index}`}
             href={service.link}
