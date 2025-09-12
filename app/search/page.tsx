@@ -326,22 +326,51 @@ export default function Page() {
   const [overlayPhase, setOverlayPhase] = useState<'idle' | 'leaving' | 'gone'>('idle');
 
   // for realtime chat 
-  const [voiceState, setVoiceState] = useState<'idle'|'connecting'|'recording'|'thinking'|'ended'>('idle')
+  const [voiceState, setVoiceState] = useState<'idle'|'connecting'|'recording'|'thinking'|'ended'|'error'|'connected'>('idle')
   const clientRef = useRef<RealtimeClient | null>(null)
   const [assistantPreview, setAssistantPreview] = useState('')
+  const [isSearchTriggered, setIsSearchTriggered] = useState(false) // 複数回実行防止
+  const [conversationHistory, setConversationHistory] = useState<Array<{role: 'user' | 'assistant', content: string}>>([]) // 会話履歴
 
   async function startVoice() {
+    // 検索トリガーフラグをリセット
+    setIsSearchTriggered(false)
+    // 会話履歴をリセット
+    setConversationHistory([])
+    
     if (!clientRef.current) {
       clientRef.current = new RealtimeClient({
         onState: setVoiceState,
         onUserTranscript: (t) => {
           // 受け取ったユーザー発話をtextareaに追記
           setText(prev => (prev ? prev + '\n' : '') + t)
+          // 会話履歴にユーザー発話を追加
+          setConversationHistory(prev => [...prev, { role: 'user', content: t }])
         },
         onAssistantText: (delta, done) => {
           // 進行中のAI返答をプレビュー表示（任意）
           setAssistantPreview(prev => done ? prev : prev + delta)
-          if (done) setAssistantPreview((p) => p + '\n')
+          if (done) {
+            setAssistantPreview((p) => p + '\n')
+          }
+        },
+        onResponseCompleted: (transcript) => {
+          // response.done イベントで確実に検索を実行
+          // AI返答を会話履歴に追加
+          if (transcript) {
+            setConversationHistory(prev => [...prev, { role: 'assistant', content: transcript }])
+          }
+          
+          // 既に検索がトリガー済みの場合は何もしない
+          if (isSearchTriggered) {
+            return
+          }
+          
+          try {
+            handleVoiceSearchCompleteWithSummary()
+          } catch (error) {
+            console.error('Error in handleVoiceSearchCompleteWithSummary:', error)
+          }
         },
       })
     }
@@ -350,11 +379,146 @@ export default function Page() {
 
   async function stopVoice() {
     await clientRef.current?.stop()
+    // 手動停止の場合も、会話内容があれば検索を開始
+    setTimeout(() => {
+      if (conversationHistory.length > 0 || text.trim() || assistantPreview.trim()) {
+        if (!isSearchTriggered) {
+          handleVoiceSearchCompleteWithSummary()
+        }
+      }
+    }, 500) // 少し待ってから実行
   }
 
+  // 会話をサマリーするAPI呼び出し
+  async function summarizeConversation(history: Array<{role: 'user' | 'assistant', content: string}>): Promise<string> {
+    try {
+      
+      // 会話履歴をテキストに変換
+      const conversationText = history
+        .map(msg => `${msg.role === 'user' ? 'ユーザー' : 'AI'}: ${msg.content}`)
+        .join('\n\n')
+      
+      const response = await fetch('/api/recommend', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          mode: 'summarize',
+          conversation: conversationText,
+          prompt: 'この会話から、ユーザーの今日の気分や感情、体験した出来事を簡潔にまとめてください。'
+        }),
+      })
+      
+      if (!response.ok) {
+        throw new Error(`Summarization failed: ${response.status}`)
+      }
+      
+      const data = await response.json()
+      return data.summary || conversationText // フォールバック
+      
+    } catch (error) {
+      console.error('Summarization error:', error)
+      // エラーの場合は元の会話テキストを返す
+      return history
+        .map(msg => `${msg.content}`)
+        .join(' ')
+    }
+  }
+
+  // サマリー機能付きの検索完了処理
+  async function handleVoiceSearchCompleteWithSummary() {
+    // 検索トリガーフラグを設定（重複実行を防ぐ）
+    setIsSearchTriggered(true)
+    
+    let conversationSummary = ''
+    
+    if (conversationHistory.length > 0) {
+      conversationSummary = await summarizeConversation(conversationHistory)
+    } else {
+      // フォールバック: 従来の方法
+      const userInput = text.trim()
+      const aiResponse = assistantPreview.trim()
+      
+      if (!userInput && !aiResponse) {
+        setIsSearchTriggered(false)
+        return
+      }
+      
+      conversationSummary = userInput
+      if (aiResponse) {
+        conversationSummary += aiResponse.length > 200 
+          ? `\n\n${aiResponse.substring(0, 200)}...` 
+          : `\n\n${aiResponse}`
+      }
+    }
+
+    // textareaに会話サマリーを設定
+    setText(conversationSummary)
+    
+    // プレビューをクリア
+    setAssistantPreview('')
+
+    // 少し待ってから既存のonSubmit処理を実行（テキスト確認付き）
+    setTimeout(() => {
+      executeOnSubmitWithRetry(conversationSummary, 0)
+    }, 300) // 待機時間を300msに延長
+  }
+
+  // リトライ機能付きのonSubmit実行
+  function executeOnSubmitWithRetry(expectedText: string, retryCount: number) {
+    const maxRetries = 3
+    const retryDelay = 400 // リトライ間隔を400msに延長
+    
+    // textareaの値を直接確認
+    const textareaElement = document.getElementById('mood') as HTMLTextAreaElement
+    const currentTextareaValue = textareaElement?.value || ''
+    
+    // テキストが正しく設定されているかチェック
+    const hasExpectedText = text.trim() === expectedText.trim() || currentTextareaValue.trim() === expectedText.trim()
+    
+    if (!hasExpectedText && retryCount < maxRetries) {
+      // 再度テキストを設定
+      setText(expectedText)
+      if (textareaElement) {
+        textareaElement.value = expectedText
+        // DOM要素のchangeイベントを発火させてReactにも通知
+        const event = new Event('input', { bubbles: true })
+        textareaElement.dispatchEvent(event)
+      }
+      
+      // より長い間隔でリトライ（React stateの更新を待つ）
+      setTimeout(() => {
+        executeOnSubmitWithRetry(expectedText, retryCount + 1)
+      }, retryDelay)
+      return
+    }
+    
+    if (!hasExpectedText) {
+      setIsSearchTriggered(false)
+      return
+    }
+    
+    // テキストが正しく設定されているので、onSubmitを実行
+    // 最終的な確認とバックアップ設定
+    const finalText = text.trim() || expectedText.trim()
+    if (finalText !== text.trim()) {
+      setText(finalText)
+    }
+    
+    try {
+      const mockEvent = {
+        preventDefault: () => {}
+      } as React.FormEvent
+      onSubmit(mockEvent)
+    } catch (error) {
+      console.error('Error in onSubmit:', error)
+      setIsSearchTriggered(false)
+    }
+  }
+
+
   // NEW: フィルタ
-  const [country, setCountry] = useState<string>(''); // '', 'japan', 'korea', 'india', 'other'
-  const [genres, setGenres] = useState<string[]>([]);
+  const [country] = useState<string>(''); // '', 'japan', 'korea', 'india', 'other'
+  const [genres] = useState<string[]>([]);
   const [limit] = useState<number>(3);
 
   // 結果が用意できて、オーバーレイが完全に消えたら自動スクロール（位置ズレ防止）
@@ -420,9 +584,30 @@ export default function Page() {
     setResults(null);
     setRevealed(false); // 新しい検索では再び幕が閉じた状態に戻す
 
-    const mood = text.trim();
+    // テキストを複数のソースから取得を試みる
+    let mood = text.trim();
+    
+    // テキストが空の場合、DOM要素から直接取得を試みる
     if (!mood) {
-      setError('今日の出来事や気分を入力してください。');
+      const textareaElement = document.getElementById('mood') as HTMLTextAreaElement;
+      mood = textareaElement?.value.trim() || '';
+      
+      // DOM要素にテキストがあったらReact stateも更新
+      if (mood && mood !== text) {
+        setText(mood);
+      }
+    }
+    
+    // 音声会話からの呼び出しかどうかを判定
+    const isFromVoiceChat = isSearchTriggered;
+    
+    if (!mood) {
+      if (isFromVoiceChat) {
+        setError('音声会話は完了しましたが、検索用のテキストが取得できませんでした。もう一度お試しください。');
+        setIsSearchTriggered(false);
+      } else {
+        setError('今日の出来事や気分を入力してください。');
+      }
       return;
     }
 
@@ -576,18 +761,25 @@ export default function Page() {
 
         <span className="text-xs text-gray-400">
           {voiceState === 'connecting' && '接続中…'}
+          {voiceState === 'connected' && '接続完了'}
           {voiceState === 'recording' && '録音中（話しかけてOK）'}
           {voiceState === 'thinking' && 'AIが考え中…'}
-          {voiceState === 'ended' && '終了'}
+          {voiceState === 'ended' && !loading && !isSearchTriggered && '会話完了'}
+          {voiceState === 'ended' && isSearchTriggered && !loading && '会話をサマリー中…'}
+          {voiceState === 'ended' && loading && '映画を検索中…'}
+          {voiceState === 'error' && 'エラーが発生しました'}
+          {loading && '映画を検索中…'}
         </span>
       </div>
 
       {/* AI返答のプレビュー（任意） */}
-      {assistantPreview && (
+      {assistantPreview && assistantPreview.trim() && (
         <div className="mt-3 rounded-xl border border-white/10 bg-black/40 p-3 text-sm text-gray-200 whitespace-pre-wrap">
           {assistantPreview}
         </div>
       )}
+
+
 
 
           {/* 送信ボタン */}

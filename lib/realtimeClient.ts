@@ -2,7 +2,9 @@
 export type RealtimeClientOptions = {
   onUserTranscript?: (text: string) => void
   onAssistantText?: (delta: string, done?: boolean) => void
+  onResponseCompleted?: (transcript?: string) => void
   onState?: (s: 'idle' | 'connecting' | 'connected' | 'recording' | 'ended' | 'error') => void
+  onLog?: (line: string) => void
   /** あいさつの一言（未指定ならデフォルト文言） */
   greetingMessage?: string
   /** Realtime モデル（サーバー側で固定しているなら不要） */
@@ -12,6 +14,7 @@ export type RealtimeClientOptions = {
 type RealtimeEvent =
   | { type: 'response.delta'; response: { output_text_delta?: string } }
   | { type: 'response.completed' }
+  | { type: 'response.done'; response: { output?: Array<{ content?: Array<{ transcript?: string }> }> } }
   | { type: 'input_audio_buffer.speech_started' }
   | { type: 'input_audio_buffer.speech_stopped' }
   | { type: 'response.audio.delta' }
@@ -38,8 +41,10 @@ export class RealtimeClient {
   send(payload: Record<string, any>) {
     if (!this.dc || this.dc.readyState !== 'open') {
       console.warn('DataChannel is not open yet. Dropping payload:', payload)
+      this.opts.onLog?.('DataChannel not open, dropping payload')
       return
     }
+    this.opts.onLog?.(`Sending: ${JSON.stringify(payload)}`)
     this.dc.send(JSON.stringify(payload))
   }
 
@@ -91,9 +96,11 @@ export class RealtimeClient {
       this.dc.onmessage = (event) => {
         try {
           const msg = JSON.parse(event.data) as RealtimeEvent
+          this.opts.onLog?.(`Received: ${JSON.stringify(msg)}`)
           this.handleRealtimeEvent(msg)
         } catch (e) {
           // 音声バイナリ delta などは JSON ではない
+          this.opts.onLog?.('Received non-JSON message (likely audio binary)')
         }
       }
 
@@ -165,12 +172,11 @@ export class RealtimeClient {
       },
     })
 
-    ///　TODO なぜか発話されない。
+    // 初回あいさつの応答を作成
     this.send({
       type: 'response.create',
       response: {
         modalities: ['text', 'audio'],
-        audio: { voice: 'alloy' },
         instructions: this.opts.greetingMessage ?? 'こんにちは！準備OKです。話しかけてください。',
       },
     })
@@ -180,28 +186,59 @@ export class RealtimeClient {
 
   /** 受信イベント（字幕/テキストの組み立てなど） */
   private handleRealtimeEvent(msg: RealtimeEvent) {
+    this.opts.onLog?.(`Processing event: ${msg.type}`)
+    
     switch (msg.type) {
       case 'input_transcription.completed': {
         const text = msg.transcription?.text ?? ''
-        if (text) this.opts.onUserTranscript?.(text)
+        if (text) {
+          this.opts.onLog?.(`User transcript: ${text}`)
+          this.opts.onUserTranscript?.(text)
+        }
         break
       }
       case 'response.delta': {
         const delta = msg.response?.output_text_delta ?? ''
-        if (delta) this.opts.onAssistantText?.(delta, false)
+        if (delta) {
+          this.opts.onLog?.(`Assistant delta: ${delta}`)
+          this.opts.onAssistantText?.(delta, false)
+        }
         break
       }
       case 'response.completed': {
+        this.opts.onLog?.('Response completed')
         this.opts.onAssistantText?.('', true)
+        this.opts.onResponseCompleted?.()
+        break
+      }
+      case 'response.done': {
+        // AIの音声返答完了時にテキスト(transcript)を抽出
+        const transcript = msg.response?.output?.[0]?.content?.[0]?.transcript
+        this.opts.onLog?.('Response done')
+        if (transcript) {
+          this.opts.onLog?.(`Assistant transcript: ${transcript}`)
+          this.opts.onAssistantText?.(transcript, true)
+        }
+        // transcriptを直接コールバックに渡す
+        this.opts.onResponseCompleted?.(transcript)
         break
       }
       case 'error': {
-        console.error('Realtime error:', msg.error?.message)
+        const errorMsg = msg.error?.message || 'Unknown error'
+        console.error('Realtime error:', errorMsg)
+        this.opts.onLog?.(`Error: ${errorMsg}`)
         this.opts.onState?.('error')
         break
       }
       default:
-        // 他のイベントは必要に応じて追加
+        // 他のイベントをログに記録
+        if (msg.type?.includes('error')) {
+          console.error('Realtime error:', msg)
+          this.opts.onLog?.(`Unknown error event: ${JSON.stringify(msg)}`)
+          this.opts.onState?.('error')
+        } else {
+          this.opts.onLog?.(`Unhandled event type: ${msg.type}`)
+        }
         break
     }
   }
