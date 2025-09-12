@@ -248,9 +248,24 @@ function HeroOverlay({
             onClick={onReveal}
             disabled={loading}
             aria-label="表示する"
-            className="mt-8 inline-flex items-center gap-2 rounded-xl border border-white/40 bg-gradient-to-b from-white/10 to-black/60 px-6 py-3 text-sm md:text-base font-semibold text-white disabled:opacity-50 hover:text-white hover:border-white/70 hover:shadow-[0_10px_30px_rgba(255,255,255,0.25)] transition"
+            className="mt-8 inline-flex items-center gap-3 rounded-xl border border-white/40 bg-gradient-to-b from-white/10 to-black/60 px-6 py-3 text-sm md:text-base font-semibold text-white disabled:opacity-50 hover:text-white hover:border-white/70 hover:shadow-[0_10px_30px_rgba(255,255,255,0.25)] transition"
           >
-            {loading ? '読み込み中…' : '表示する'}
+            {loading ? (
+              <>
+                <div className="relative">
+                  <div className="animate-spin w-5 h-5 border-2 border-white/50 border-t-white rounded-full"></div>
+                  <div className="absolute inset-0 animate-pulse w-5 h-5 bg-white/10 rounded-full"></div>
+                </div>
+                <span className="animate-pulse">
+                  映画を選んでいます
+                  <span className="inline-block animate-bounce ml-0.5">.</span>
+                  <span className="inline-block animate-bounce ml-0.5" style={{ animationDelay: '0.15s' }}>.</span>
+                  <span className="inline-block animate-bounce ml-0.5" style={{ animationDelay: '0.3s' }}>.</span>
+                </span>
+              </>
+            ) : (
+              '表示する'
+            )}
           </button>
 
         </div>
