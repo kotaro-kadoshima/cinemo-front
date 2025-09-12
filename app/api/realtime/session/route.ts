@@ -1,52 +1,48 @@
-import { NextResponse } from 'next/server'
-export const dynamic = 'force-dynamic'
-export const runtime = 'nodejs' // 追加
+// app/api/realtime/session/route.ts
+import { NextRequest } from 'next/server'
 
-export async function POST() {
-  try {
-    if (!process.env.OPENAI_API_KEY) {
-      return NextResponse.json(
-        { error: 'OPENAI_API_KEY is not set on the server' },
-        { status: 500 }
-      )
-    }
+export async function POST(req: NextRequest) {
+  const apiKey = process.env.OPENAI_API_KEY
+  const model = process.env.OPENAI_REALTIME_MODEL || 'gpt-realtime'
+  const voice = process.env.OPENAI_REALTIME_VOICE || 'alloy'
 
-    const r = await fetch('https://api.openai.com/v1/realtime/sessions', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-        'Content-Type': 'application/json',
-        'OpenAI-Beta': 'realtime=v1',
-      },
-      body: JSON.stringify({
-        model: 'gpt-realtime',
-        modalities: ['audio', 'text'],
-        turn_detection: { type: 'server_vad' },
-        voice: 'alloy',
-        input_audio_transcription: { model: 'whisper-1' },
-      }),
-    })
-
-    if (!r.ok) {
-      const msg = await r.text()
-      return NextResponse.json(
-        { error: 'OpenAI /realtime/sessions failed', detail: msg },
-        { status: r.status }
-      )
-    }
-
-    const session = await r.json()
-    const token = session?.client_secret?.value
-    if (!token) {
-      return NextResponse.json({ error: 'Missing client_secret in OpenAI response', detail: session }, { status: 502 })
-    }
-    return NextResponse.json({ token }, { headers: { 'Cache-Control': 'no-store' } })
-
-    return NextResponse.json(
-      { token },
-      { headers: { 'Cache-Control': 'no-store' } }
-    )
-  } catch (e: any) {
-    return NextResponse.json({ error: e?.message ?? 'unknown' }, { status: 500 })
+  if (!apiKey) {
+    return new Response('Missing OPENAI_API_KEY', { status: 500 })
   }
+
+  // OpenAI Realtime セッション（短命トークン）作成
+  const res = await fetch('https://api.openai.com/v1/realtime/sessions', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+      'OpenAI-Beta': 'realtime=v1',
+    },
+    body: JSON.stringify({
+      model,
+      voice,                 // ここで既定ボイスも付けておく
+      modalities: ['text','audio'],
+    }),
+  })
+
+  if (!res.ok) {
+    const text = await res.text()
+    return new Response(`Failed to create session: ${res.status} ${res.statusText}\n${text}`, { status: 500 })
+  }
+
+  const json = await res.json()
+
+  // クライアントで使いやすい形に正規化
+  // OpenAI は { client_secret: { value } } で返すので token に詰め替える
+  const token =
+    json?.client_secret?.value ??
+    json?.client_secret ??
+    json?.value ??
+    json?.token
+
+  if (!token) {
+    return new Response(`Unexpected session response:\n${JSON.stringify(json, null, 2)}`, { status: 500 })
+  }
+
+  return Response.json({ token })
 }

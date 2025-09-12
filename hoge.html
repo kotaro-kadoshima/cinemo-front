@@ -1,0 +1,10 @@
+<button id="b">音出る？（440Hz, 1秒）</button>
+<script>
+document.getElementById('b').onclick = async () => {
+  const ctx = new (window.AudioContext||window.webkitAudioContext)();
+  if (ctx.state === 'suspended') await ctx.resume(); // 重要
+  const o = ctx.createOscillator(); o.frequency.value = 440;
+  const g = ctx.createGain(); g.gain.value = 0.1;
+  o.connect(g).connect(ctx.destination); o.start(); setTimeout(()=>o.stop(), 1000);
+};
+</script>
