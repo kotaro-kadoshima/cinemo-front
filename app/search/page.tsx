@@ -1,6 +1,9 @@
 'use client';
-import { useEffect, useRef, useState, type CSSProperties } from 'react';
+import { useEffect, useRef, useState, type CSSProperties, Suspense } from 'react';
+import { StreamingLinks } from '@/components/streaming-links';
+import { useSearchParams } from 'next/navigation';
 import { RealtimeClient } from '@/lib/realtimeClient';
+
 
 /** 任意の速度でスクロール（CSS smooth より滑らかに） */
 function smoothScrollTo(targetY: number, duration = 1200) {
@@ -245,9 +248,24 @@ function HeroOverlay({
             onClick={onReveal}
             disabled={loading}
             aria-label="表示する"
-            className="mt-8 inline-flex items-center gap-2 rounded-xl border border-white/40 bg-gradient-to-b from-white/10 to-black/60 px-6 py-3 text-sm md:text-base font-semibold text-white disabled:opacity-50 hover:text-white hover:border-white/70 hover:shadow-[0_10px_30px_rgba(255,255,255,0.25)] transition"
+            className="mt-8 inline-flex items-center gap-3 rounded-xl border border-white/40 bg-gradient-to-b from-white/10 to-black/60 px-6 py-3 text-sm md:text-base font-semibold text-white disabled:opacity-50 hover:text-white hover:border-white/70 hover:shadow-[0_10px_30px_rgba(255,255,255,0.25)] transition"
           >
-            {loading ? '読み込み中…' : '表示する'}
+            {loading ? (
+              <>
+                <div className="relative">
+                  <div className="animate-spin w-5 h-5 border-2 border-white/50 border-t-white rounded-full"></div>
+                  <div className="absolute inset-0 animate-pulse w-5 h-5 bg-white/10 rounded-full"></div>
+                </div>
+                <span className="animate-pulse">
+                  映画を選んでいます
+                  <span className="inline-block animate-bounce ml-0.5">.</span>
+                  <span className="inline-block animate-bounce ml-0.5" style={{ animationDelay: '0.15s' }}>.</span>
+                  <span className="inline-block animate-bounce ml-0.5" style={{ animationDelay: '0.3s' }}>.</span>
+                </span>
+              </>
+            ) : (
+              '表示する'
+            )}
           </button>
 
         </div>
@@ -314,7 +332,7 @@ const GENRE_OPTIONS = [
   '音楽',
 ] as const;
 
-export default function Page() {
+function SearchPageContent() {
   const [text, setText] = useState('');
   const [posterText, setPosterText] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -324,8 +342,9 @@ export default function Page() {
   const [formPhase, setFormPhase] = useState<'shown' | 'collapsing' | 'hidden'>('shown');
   const [resultsPhase, setResultsPhase] = useState<'shown' | 'collapsing' | 'hidden'>('hidden');
   const [overlayPhase, setOverlayPhase] = useState<'idle' | 'leaving' | 'gone'>('idle');
-
-  // for realtime chat 
+  const searchParams = useSearchParams();
+  const showStreaming = searchParams.get('streaming') === 'true';
+// for realtime chat 
   const [voiceState, setVoiceState] = useState<'idle'|'connecting'|'recording'|'thinking'|'ended'|'error'|'connected'>('idle')
   const clientRef = useRef<RealtimeClient | null>(null)
   const [assistantPreview, setAssistantPreview] = useState('')
@@ -881,6 +900,7 @@ export default function Page() {
                       {m.origin && <span>lang: {m.origin}</span>}
                     </div>
                     <p className="text-sm text-gray-300 mt-1">{m.reason}</p>
+                    {showStreaming && <StreamingLinks tmdbId={m.tmdbId} />}
                   </article>
                 ))}
               </div>
@@ -901,5 +921,20 @@ export default function Page() {
         </BackZoomReveal>
       )}
     </main>
+  );
+}
+
+export default function Page() {
+  return (
+    <Suspense fallback={
+      <main className="min-h-screen bg-black text-white px-6 py-12 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin w-8 h-8 border border-gray-500 border-t-transparent rounded-full mx-auto mb-4"></div>
+          <p className="text-gray-400">読み込み中...</p>
+        </div>
+      </main>
+    }>
+      <SearchPageContent />
+    </Suspense>
   );
 }
