@@ -1,5 +1,9 @@
 'use client';
 import { useEffect, useState, type CSSProperties } from 'react';
+import { StreamingLinks } from '@/components/streaming-links';
+import { useSearchParams } from 'next/navigation';
+
+
 
 /** 任意の速度でスクロール（CSS smooth より滑らかに） */
 function smoothScrollTo(targetY: number, duration = 1200) {
@@ -323,6 +327,8 @@ export default function Page() {
   const [formPhase, setFormPhase] = useState<'shown' | 'collapsing' | 'hidden'>('shown');
   const [resultsPhase, setResultsPhase] = useState<'shown' | 'collapsing' | 'hidden'>('hidden');
   const [overlayPhase, setOverlayPhase] = useState<'idle' | 'leaving' | 'gone'>('idle');
+  const searchParams = useSearchParams();
+  const showStreaming = searchParams.get('streaming') === 'true';
 
   // NEW: フィルタ
   const [country, setCountry] = useState<string>(''); // '', 'japan', 'korea', 'india', 'other'
@@ -624,6 +630,7 @@ export default function Page() {
                       {m.origin && <span>lang: {m.origin}</span>}
                     </div>
                     <p className="text-sm text-gray-300 mt-1">{m.reason}</p>
+                    {showStreaming && <StreamingLinks tmdbId={m.tmdbId} />}
                   </article>
                 ))}
               </div>
