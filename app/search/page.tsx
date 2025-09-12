@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useState, type CSSProperties } from 'react';
+import { useEffect, useState, type CSSProperties, Suspense } from 'react';
 import { StreamingLinks } from '@/components/streaming-links';
 import { useSearchParams } from 'next/navigation';
 
@@ -317,7 +317,7 @@ const GENRE_OPTIONS = [
   '音楽',
 ] as const;
 
-export default function Page() {
+function SearchPageContent() {
   const [text, setText] = useState('');
   const [posterText, setPosterText] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -651,5 +651,20 @@ export default function Page() {
         </BackZoomReveal>
       )}
     </main>
+  );
+}
+
+export default function Page() {
+  return (
+    <Suspense fallback={
+      <main className="min-h-screen bg-black text-white px-6 py-12 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin w-8 h-8 border border-gray-500 border-t-transparent rounded-full mx-auto mb-4"></div>
+          <p className="text-gray-400">読み込み中...</p>
+        </div>
+      </main>
+    }>
+      <SearchPageContent />
+    </Suspense>
   );
 }
