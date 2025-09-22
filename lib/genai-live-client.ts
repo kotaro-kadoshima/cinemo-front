@@ -32,7 +32,7 @@ import {
 
 import { EventEmitter } from "eventemitter3";
 import { difference } from "lodash";
-import { LiveClientOptions, StreamingLog } from "../types";
+import { LiveClientOptions, StreamingLog } from "@/app/types";
 import { base64ToArrayBuffer } from "./utils";
 import { useLoggerStore } from "./store-logger";
 
