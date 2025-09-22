@@ -46,14 +46,33 @@ export class AudioRecorder extends EventEmitter {
   }
 
   async start() {
+    if (typeof window === "undefined") {
+      throw new Error("AudioRecorder is not available in SSR environment");
+    }
+
     if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
       throw new Error("Could not request user media");
     }
 
+    if (this.starting) {
+      return this.starting;
+    }
+
     this.starting = new Promise(async (resolve, reject) => {
-      this.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      this.audioContext = await audioContext({ sampleRate: this.sampleRate });
-      this.source = this.audioContext.createMediaStreamSource(this.stream);
+      try {
+        this.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        console.log("MediaStream obtained:", this.stream);
+        console.log("MediaStream type:", typeof this.stream);
+        console.log("MediaStream instanceof MediaStream:", this.stream instanceof MediaStream);
+
+        this.audioContext = await audioContext({ sampleRate: this.sampleRate });
+        console.log("AudioContext created:", this.audioContext);
+
+        if (!this.stream || !(this.stream instanceof MediaStream)) {
+          throw new Error("Failed to obtain valid MediaStream");
+        }
+
+        this.source = this.audioContext.createMediaStreamSource(this.stream);
 
       const workletName = "audio-recorder-worklet";
       const src = createWorketFromSrc(workletName, AudioRecordingWorklet);
@@ -85,11 +104,18 @@ export class AudioRecorder extends EventEmitter {
         this.emit("volume", ev.data.volume);
       };
 
-      this.source.connect(this.vuWorklet);
-      this.recording = true;
-      resolve();
-      this.starting = null;
+        this.source.connect(this.vuWorklet);
+        this.recording = true;
+        resolve();
+        this.starting = null;
+      } catch (error) {
+        console.error("Error in AudioRecorder.start():", error);
+        this.starting = null;
+        reject(error);
+      }
     });
+
+    return this.starting;
   }
 
   stop() {

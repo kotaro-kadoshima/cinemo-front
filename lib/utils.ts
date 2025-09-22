@@ -24,11 +24,21 @@ export const audioContext: (
   options?: GetAudioContextOptions
 ) => Promise<AudioContext> = (() => {
   const didInteract = new Promise((res) => {
-    window.addEventListener("pointerdown", res, { once: true });
-    window.addEventListener("keydown", res, { once: true });
+    if (typeof window !== "undefined") {
+      window.addEventListener("pointerdown", res, { once: true });
+      window.addEventListener("keydown", res, { once: true });
+    } else {
+      // SSR環境では即座にresolve
+      res(undefined);
+    }
   });
 
   return async (options?: GetAudioContextOptions) => {
+    // SSR環境では何もしない
+    if (typeof window === "undefined") {
+      throw new Error("AudioContext is not available in SSR environment");
+    }
+
     try {
       const a = new Audio();
       a.src =

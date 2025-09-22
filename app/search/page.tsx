@@ -479,22 +479,130 @@ function SearchPageContent() {
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
-    setError(null);
-    setResults(null);
-    setRevealed(false); // 新しい検索では再び幕が閉じた状態に戻す
 
     const mood = text.trim();
-    if (!mood) {
+    // 音声会話が接続中の場合はバリデーションをスキップ
+    if (!mood && !connected) {
       setError("今日の出来事や気分を入力してください。");
       return;
     }
 
+    // 音声会話中の場合は何もしない（会話終了時に自動で検索される）
+    if (connected) {
+      return;
+    }
+
+    await handleMovieSearch(mood);
+  }
+
+  function onResetSearch() {
+    // 結果ブロックを高級感アニメで隠す
+    setResultsPhase("collapsing");
+    setTimeout(() => {
+      // 結果とポスターを消し、フォームを再表示
+      setResults(null);
+      setPosterText(null);
+      setRevealed(false);
+      setFormPhase("shown");
+      setOverlayPhase("idle");
+      // 上部へスムーススクロール
+      smoothScrollTo(0, 900);
+    }, 800);
+  }
+
+  const connectButtonRef = useRef<HTMLButtonElement>(null);
+  const { client, connected, connect, disconnect, volume, getConversationAsText, clearConversationHistory } =
+    useLiveAPIContext();
+
+  // 音声会話処理の state
+  const [muted, setMuted] = useState(false);
+  const [inVolume, setInVolume] = useState(0);
+  const [audioRecorder] = useState(() => {
+    // SSR環境では空のオブジェクトを返す
+    if (typeof window === "undefined") {
+      return null;
+    }
+    return new AudioRecorder();
+  });
+  const [wasConnected, setWasConnected] = useState(false);
+  const [isSummarizing, setIsSummarizing] = useState(false);
+
+  useEffect(() => {
+    if (!connected && connectButtonRef.current) {
+      connectButtonRef.current.focus();
+    }
+    // 音声会話開始時にエラーメッセージをクリア
+    if (connected) {
+      setError(null);
+    }
+  }, [connected]);
+
+  // 音声接続が切断された時に会話履歴をGeminiで要約してテキストエリアに設定
+  useEffect(() => {
+    if (wasConnected && !connected) {
+      // 接続が切断された時
+      const conversationText = getConversationAsText();
+      if (conversationText.trim()) {
+        // 会話を要約してからテキストエリアに設定
+        summarizeAndSetText(conversationText);
+        // 会話履歴をクリア（次回の会話のため）
+        clearConversationHistory();
+      }
+    }
+    setWasConnected(connected);
+  }, [connected, wasConnected, getConversationAsText, clearConversationHistory]);
+
+  // 会話を要約してテキストエリアに設定する関数
+  const summarizeAndSetText = async (conversationText: string) => {
+    setIsSummarizing(true);
+    try {
+      const response = await fetch('/api/summarize-conversation', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ conversation: conversationText }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+
+      const data = await response.json();
+      if (data.summary) {
+        setText(data.summary);
+        // 要約完了後、少し待ってから映画検索を促す
+        setTimeout(() => {
+          if (data.summary.trim()) {
+            // 自動的に映画検索を実行
+            handleMovieSearch(data.summary.trim());
+          }
+        }, 1000);
+      } else {
+        // 要約に失敗した場合は元の会話をそのまま使用
+        setText(conversationText);
+      }
+    } catch (error) {
+      console.error('Failed to summarize conversation:', error);
+      // 要約に失敗した場合は元の会話をそのまま使用
+      setText(conversationText);
+    } finally {
+      setIsSummarizing(false);
+    }
+  };
+
+  // 映画検索を実行する関数
+  const handleMovieSearch = async (mood: string) => {
+    setError(null);
+    setResults(null);
+    setRevealed(false);
+
     // ① 入力テキストをそのまま「ポスターのタイトル」にする
     setPosterText(mood);
     setOverlayPhase("idle");
-    // 入力ブロックを高級感のあるアニメーションで消す（フェード＋少し縮小＋ブラー→高さを畳む）
+    // 入力ブロックを高級感のあるアニメーションで消す
     setFormPhase("collapsing");
-    setTimeout(() => setFormPhase("hidden"), 800); // アニメーション後に実際に非表示化
+    setTimeout(() => setFormPhase("hidden"), 800);
 
     // ② レコメンド取得（フィルタ同梱）
     setLoading(true);
@@ -516,37 +624,7 @@ function SearchPageContent() {
     } finally {
       setLoading(false);
     }
-  }
-
-  function onResetSearch() {
-    // 結果ブロックを高級感アニメで隠す
-    setResultsPhase("collapsing");
-    setTimeout(() => {
-      // 結果とポスターを消し、フォームを再表示
-      setResults(null);
-      setPosterText(null);
-      setRevealed(false);
-      setFormPhase("shown");
-      setOverlayPhase("idle");
-      // 上部へスムーススクロール
-      smoothScrollTo(0, 900);
-    }, 800);
-  }
-
-  const connectButtonRef = useRef<HTMLButtonElement>(null);
-  const { client, connected, connect, disconnect, volume } =
-    useLiveAPIContext();
-
-  // 音声会話処理の state
-  const [muted, setMuted] = useState(false);
-  const [inVolume, setInVolume] = useState(0);
-  const [audioRecorder] = useState(() => new AudioRecorder());
-
-  useEffect(() => {
-    if (!connected && connectButtonRef.current) {
-      connectButtonRef.current.focus();
-    }
-  }, [connected]);
+  };
   useEffect(() => {
     document.documentElement.style.setProperty(
       "--volume",
@@ -563,20 +641,40 @@ function SearchPageContent() {
         },
       ]);
     };
+
+    const startAudioRecording = async () => {
+      try {
+        if (audioRecorder) {
+          audioRecorder.on("data", onData).on("volume", setInVolume);
+          await audioRecorder.start();
+        }
+      } catch (error) {
+        console.error("Failed to start audio recording:", error);
+        // 音声録音開始に失敗した場合は接続を切断
+        if (connected) {
+          disconnect();
+        }
+      }
+    };
+
     if (connected && !muted && audioRecorder) {
-      audioRecorder.on("data", onData).on("volume", setInVolume).start();
-    } else {
+      startAudioRecording();
+    } else if (audioRecorder) {
       audioRecorder.stop();
     }
     return () => {
-      audioRecorder.off("data", onData).off("volume", setInVolume);
+      if (audioRecorder) {
+        audioRecorder.off("data", onData).off("volume", setInVolume);
+      }
     };
-  }, [connected, client, muted, audioRecorder]);
+  }, [connected, client, muted, audioRecorder, disconnect]);
 
   // コンポーネントアンマウント時のクリーンアップ
   useEffect(() => {
     return () => {
-      audioRecorder.stop();
+      if (audioRecorder) {
+        audioRecorder.stop();
+      }
     };
   }, [audioRecorder]);
 
@@ -663,8 +761,12 @@ function SearchPageContent() {
 
           {/* 音声会話 */}
           <div className="mt-4 flex flex-col items-center gap-3">
-            <label className="text-sm text-gray-400">
+            <label className="text-sm text-gray-400 text-center">
               音声で会話する（AIがあなたの気持ちを聞いてくれます）
+              <br />
+              <span className="text-xs text-gray-500">
+                会話終了後、内容が自動でテキスト欄に入力されます
+              </span>
             </label>
             <div className="flex items-center gap-3">
               <button
@@ -707,16 +809,25 @@ function SearchPageContent() {
                 )}
               </div>
             )}
+            {isSummarizing && (
+              <div className="text-xs text-blue-400 text-center flex items-center justify-center gap-2 mt-2">
+                <div className="animate-spin w-3 h-3 border border-blue-400 border-t-transparent rounded-full"></div>
+                AIが会話を要約して映画を探します...
+              </div>
+            )}
           </div>
 
           {/* 送信ボタン */}
           <div className="mt-5 flex justify-end">
             <button
               type="submit"
-              disabled={loading || !text.trim()}
+              disabled={loading || (!text.trim() && !connected)}
               className="inline-flex items-center gap-2 rounded-xl border border-red-500/80 px-5 py-3 text-sm font-semibold text-red-400 hover:text-white hover:bg-red-500/90 disabled:opacity-50 transition"
             >
-              この気持ちに合う映画を教えて
+              {connected
+                ? "音声会話中（終了後に自動で映画を検索）"
+                : "この気持ちに合う映画を教えて"
+              }
             </button>
           </div>
 

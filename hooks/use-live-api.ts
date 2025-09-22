@@ -32,6 +32,8 @@ export type UseLiveAPIResults = {
   connect: () => Promise<void>;
   disconnect: () => Promise<void>;
   volume: number;
+  getConversationAsText: () => string;
+  clearConversationHistory: () => void;
 };
 
 export function useLiveAPI(options: LiveClientOptions): UseLiveAPIResults {
@@ -45,17 +47,25 @@ export function useLiveAPI(options: LiveClientOptions): UseLiveAPIResults {
 
   // register audio for streaming server -> speakers
   useEffect(() => {
+    if (typeof window === "undefined") {
+      return; // SSR環境では何もしない
+    }
+
     if (!audioStreamerRef.current) {
-      audioContext({ id: "audio-out" }).then((audioCtx: AudioContext) => {
-        audioStreamerRef.current = new AudioStreamer(audioCtx);
-        audioStreamerRef.current
-          .addWorklet<any>("vumeter-out", VolMeterWorket, (ev: any) => {
-            setVolume(ev.data.volume);
-          })
-          .then(() => {
-            // Successfully added worklet
-          });
-      });
+      audioContext({ id: "audio-out" })
+        .then((audioCtx: AudioContext) => {
+          audioStreamerRef.current = new AudioStreamer(audioCtx);
+          audioStreamerRef.current
+            .addWorklet("vumeter-out", VolMeterWorket, (ev: {data: {volume: number}}) => {
+              setVolume(ev.data.volume);
+            })
+            .then(() => {
+              // Successfully added worklet
+            });
+        })
+        .catch((error) => {
+          console.warn("Failed to initialize audio context:", error);
+        });
     }
   }, [audioStreamerRef]);
 
@@ -108,6 +118,14 @@ export function useLiveAPI(options: LiveClientOptions): UseLiveAPIResults {
     setConnected(false);
   }, [setConnected, client]);
 
+  const getConversationAsText = useCallback(() => {
+    return client.getConversationAsText();
+  }, [client]);
+
+  const clearConversationHistory = useCallback(() => {
+    client.clearConversationHistory();
+  }, [client]);
+
   return {
     client,
     config,
@@ -118,5 +136,7 @@ export function useLiveAPI(options: LiveClientOptions): UseLiveAPIResults {
     connect,
     disconnect,
     volume,
+    getConversationAsText,
+    clearConversationHistory,
   };
 }

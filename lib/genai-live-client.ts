@@ -190,7 +190,7 @@ export class GenAILiveClient extends EventEmitter<LiveClientEventTypes> {
       //   callbacks,
       // });
       this._session = await this.client.live.connect({
-        model: customeModel,
+        model,
         config: customConfig,
         callbacks,
       });
@@ -455,5 +455,49 @@ export class GenAILiveClient extends EventEmitter<LiveClientEventTypes> {
     if (this.currentAIMessage.trim()) {
       console.log(`蓄積中 [AI] ${this.currentAIMessage}`);
     }
+  }
+
+  // 会話履歴を取得するメソッド（最終的な蓄積メッセージも含む）
+  getConversationHistory(): MessageHistoryItem[] {
+    const history = [...this.messageHistory];
+
+    // 蓄積中のメッセージがあれば追加
+    if (this.currentUserMessage.trim()) {
+      history.push({
+        type: "user",
+        content: this.currentUserMessage.trim(),
+        timestamp: new Date(),
+      });
+    }
+    if (this.currentAIMessage.trim()) {
+      history.push({
+        type: "ai",
+        content: this.currentAIMessage.trim(),
+        timestamp: new Date(),
+      });
+    }
+
+    return history;
+  }
+
+  // 会話履歴をテキスト形式で取得
+  getConversationAsText(): string {
+    const history = this.getConversationHistory();
+    if (history.length === 0) return "";
+
+    return history
+      .map((msg) => {
+        const role = msg.type === "user" ? "あなた" : "AI";
+        return `${role}: ${msg.content}`;
+      })
+      .join("\n\n");
+  }
+
+  // 会話履歴をクリア
+  clearConversationHistory() {
+    this.messageHistory = [];
+    this.currentUserMessage = "";
+    this.currentAIMessage = "";
+    this.lastMessageType = null;
   }
 }
