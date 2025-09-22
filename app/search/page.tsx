@@ -7,6 +7,7 @@ import {
   useCallback,
   useMemo,
 } from "react";
+import Image from "next/image";
 import { StreamingLinks } from "@/components/streaming-links";
 import { useSearchParams } from "next/navigation";
 import { useLiveAPIContext } from "../../contexts/LiveAPIContext";
@@ -192,6 +193,7 @@ function SearchPageContent() {
   const [overlayPhase, setOverlayPhase] = useState<"idle" | "leaving" | "gone">(
     "idle"
   );
+  const [inputMode, setInputMode] = useState<"text" | "voice">("text");
   const searchParams = useSearchParams();
   const showStreaming = searchParams.get("streaming") === "true";
 
@@ -261,14 +263,15 @@ function SearchPageContent() {
     e.preventDefault();
 
     const mood = text.trim();
-    // 音声会話が接続中の場合はバリデーションをスキップ
-    if (!mood && !connected) {
-      setError("今日の出来事や気分を入力してください。");
-      return;
-    }
 
     // 音声会話中の場合は何もしない（会話終了時に自動で検索される）
     if (connected) {
+      return;
+    }
+
+    // テキストモードでテキストが空の場合はエラー
+    if (inputMode === "text" && !mood) {
+      setError("今日の出来事や気分を入力してください。");
       return;
     }
 
@@ -295,7 +298,6 @@ function SearchPageContent() {
     useLiveAPIContext();
 
   // 音声会話処理の state
-  const [muted, setMuted] = useState(false);
   const [inVolume, setInVolume] = useState(0);
   const [audioRecorder] = useState(() => {
     // SSR環境では空のオブジェクトを返す
@@ -397,6 +399,8 @@ function SearchPageContent() {
       // 接続が切断された時
       const conversationText = getConversationAsText();
       if (conversationText.trim()) {
+        // テキストモードに切り替えてから要約を設定
+        setInputMode("text");
         // 会話を要約してからテキストエリアに設定
         summarizeAndSetText(conversationText);
         // 会話履歴をクリア（次回の会話のため）
@@ -437,7 +441,7 @@ function SearchPageContent() {
       }
     };
 
-    if (connected && !muted && audioRecorder) {
+    if (connected && audioRecorder) {
       startAudioRecording();
     } else if (audioRecorder) {
       audioRecorder.stop();
@@ -447,7 +451,7 @@ function SearchPageContent() {
         audioRecorder.off("data", onData).off("volume", setInVolume);
       }
     };
-  }, [connected, client, muted, audioRecorder, disconnect]);
+  }, [connected, client, audioRecorder, disconnect]);
 
   // コンポーネントアンマウント時のクリーンアップ
   useEffect(() => {
@@ -509,114 +513,206 @@ function SearchPageContent() {
             <div aria-hidden className="mx-auto mt-3 h-1 w-24 " />
           </div>
 
-          <label htmlFor="mood" className="block text-sm text-gray-400 mb-2">
-            今日の出来事や気分（自由に）
-          </label>
-
-          <div className="rounded-xl border border-white/15 bg-[#0F172A]/60 p-2">
-            <textarea
-              id="mood"
-              rows={5}
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              placeholder={`例：上司に褒められて嬉しかった。\n例：恋人と喧嘩して心がざわざわしてる。\n例：仕事でくたびれて何も考えたくない。`}
-              className="w-full resize-none rounded-lg bg-[#111827] text-white/90 px-4 py-3 outline-none placeholder:text-gray-500 focus:ring-2 focus:ring-red-500/60"
-            />
-          </div>
-
-          {/* 例文チップ */}
-          <div className="mt-4 flex flex-wrap gap-2">
-            {EXAMPLES.map((ex) => (
-              <button
-                key={ex}
-                type="button"
-                onClick={() => setText(ex)}
-                className="rounded-full border border-white/15 bg-black/40 px-3 py-1 text-xs text-gray-300 hover:border-red-500 hover:text-white transition"
-                aria-label={`例文: ${ex}`}
-              >
-                {ex}
-              </button>
-            ))}
-          </div>
-
-          {/* 音声会話 */}
-          <div className="mt-4 flex flex-col items-center gap-3">
-            <label className="text-sm text-gray-400 text-center">
-              音声で会話する（AIがあなたの気持ちを聞いてくれます）
-              <br />
-              <span className="text-xs text-gray-500">
-                会話終了後、内容が自動でテキスト欄に入力されます
-              </span>
-            </label>
-            <div className="flex items-center gap-3">
-              <button
-                ref={connectButtonRef}
-                className={`inline-flex items-center justify-center rounded-full transition shadow-lg w-14 h-14 text-white text-3xl focus:outline-none focus:ring-2 focus:ring-red-400 ${
-                  connected
-                    ? "bg-green-600 hover:bg-green-700"
-                    : "bg-red-600 hover:bg-red-700"
-                }`}
-                onClick={connected ? disconnect : connect}
-                disabled={loading}
-                title={connected ? "音声接続を切断" : "音声接続を開始"}
-              >
-                🎤
-              </button>
-              {connected && (
+          {/* モードセレクタ */}
+          <div className="flex justify-center mb-6">
+            <div className="relative bg-black/60 rounded-2xl p-1 border border-white/20">
+              <div
+                className="absolute top-1 bottom-1 rounded-xl bg-gradient-to-r from-red-600 to-red-500 transition-all duration-300 ease-out"
+                style={{
+                  left: inputMode === "text" ? "4px" : "50%",
+                  width: "calc(50% - 4px)",
+                }}
+              />
+              <div className="relative flex">
                 <button
-                  className={`inline-flex items-center justify-center rounded-full transition shadow-lg w-12 h-12 text-white focus:outline-none focus:ring-2 focus:ring-gray-400 ${
-                    muted
-                      ? "bg-gray-600 hover:bg-gray-700"
-                      : "bg-blue-600 hover:bg-blue-700"
+                  type="button"
+                  onClick={() => setInputMode("text")}
+                  className={`relative z-10 flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-medium transition-colors duration-200 ${
+                    inputMode === "text"
+                      ? "text-white"
+                      : "text-gray-400 hover:text-gray-200"
                   }`}
-                  onClick={() => setMuted(!muted)}
-                  title={muted ? "ミュート解除" : "ミュート"}
                 >
-                  {muted ? "🔇" : "🔊"}
+                  <span className="text-lg">✍️</span>
+                  テキスト入力
                 </button>
-              )}
+                <button
+                  type="button"
+                  onClick={() => setInputMode("voice")}
+                  className={`relative z-10 flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-medium transition-colors duration-200 ${
+                    inputMode === "voice"
+                      ? "text-white"
+                      : "text-gray-400 hover:text-gray-200"
+                  }`}
+                >
+                  <span className="text-lg">🎤</span>
+                  音声会話
+                </button>
+              </div>
             </div>
-            {connected && (
-              <div className="text-xs text-gray-500 text-center">
-                {muted ? "音声入力がミュートされています" : "音声入力中..."}
-                {!muted && inVolume > 0 && (
-                  <div className="mt-1 w-32 h-1 bg-gray-700 rounded-full mx-auto overflow-hidden">
-                    <div
-                      className="h-full bg-green-500 transition-all duration-100"
-                      style={{ width: `${Math.min(inVolume * 100, 100)}%` }}
-                    />
+          </div>
+
+          {/* テキスト入力モード */}
+          {inputMode === "text" && (
+            <div className="space-y-4">
+              <label htmlFor="mood" className="block text-sm text-gray-400">
+                今日の出来事や気分（自由に）
+              </label>
+
+              <div className="rounded-xl border border-white/15 bg-[#0F172A]/60 p-2">
+                <textarea
+                  id="mood"
+                  rows={5}
+                  value={text}
+                  onChange={(e) => setText(e.target.value)}
+                  placeholder={`例：上司に褒められて嬉しかった。\n例：恋人と喧嘩して心がざわざわしてる。\n例：仕事でくたびれて何も考えたくない。`}
+                  className="w-full resize-none rounded-lg bg-[#111827] text-white/90 px-4 py-3 outline-none placeholder:text-gray-500 focus:ring-2 focus:ring-red-500/60"
+                />
+              </div>
+
+              {/* 例文チップ */}
+              <div className="flex flex-wrap gap-2">
+                {EXAMPLES.map((ex) => (
+                  <button
+                    key={ex}
+                    type="button"
+                    onClick={() => setText(ex)}
+                    className="rounded-full border border-white/15 bg-black/40 px-3 py-1 text-xs text-gray-300 hover:border-red-500 hover:text-white transition-all duration-200 hover:scale-105"
+                    aria-label={`例文: ${ex}`}
+                  >
+                    {ex}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* 音声会話モード */}
+          {inputMode === "voice" && (
+            <div className="space-y-6">
+              <div className="text-center">
+                <h3 className="text-lg font-medium text-gray-200 mb-2">
+                  シネモと音声で会話しましょう
+                </h3>
+                <p className="text-sm text-gray-400">
+                  シネモがあなたの気持ちを聞いてくれます
+                  <br />
+                  <span className="text-xs text-gray-500">
+                    会話終了後、内容が自動でテキスト欄に入力され映画を探します
+                  </span>
+                </p>
+              </div>
+
+              {/* メイン音声ボタン */}
+              <div className="flex flex-col items-center gap-4">
+                <div className="relative">
+                  <button
+                    type="button"
+                    ref={connectButtonRef}
+                    className={`relative inline-flex items-center justify-center rounded-full transition-all duration-300 shadow-2xl w-20 h-20 focus:outline-none focus:ring-4 overflow-hidden ${
+                      connected
+                        ? "focus:ring-green-400/50 animate-pulse"
+                        : "focus:ring-red-400/50 hover:scale-105"
+                    }`}
+                    onClick={connected ? disconnect : connect}
+                    disabled={loading}
+                    title={connected ? "クリックして音声会話を終了（会話内容を要約して映画を探します）" : "クリックして音声会話を開始"}
+                  >
+                    {/* 背景グラデーション */}
+                    <div className={`absolute inset-0 rounded-full transition-all duration-300 ${
+                      connected
+                        ? "bg-gradient-to-b from-green-500 to-green-600 hover:from-green-600 hover:to-green-700"
+                        : "bg-gradient-to-b from-red-500 to-red-600 hover:from-red-600 hover:to-red-700"
+                    }`} />
+
+                    {/* Cinemo画像 */}
+                    <div className="relative z-10 w-20 h-20 rounded-full overflow-hidden bg-white/90 flex items-center justify-center">
+                      <Image
+                        src="/cinemo.png"
+                        alt="Cinemo"
+                        width={112}
+                        height={112}
+                        className="w-28 h-28 object-contain"
+                      />
+                    </div>
+
+                    {/* 接続時のオーバーレイ */}
+                    {connected && (
+                      <>
+                        <div className="absolute inset-0 rounded-full bg-green-400/30 animate-ping" />
+                        <div className="absolute top-1 right-1 w-4 h-4 bg-red-500 rounded-full flex items-center justify-center">
+                          <div className="w-2 h-2 bg-white rounded-full animate-pulse" />
+                        </div>
+                      </>
+                    )}
+                  </button>
+                </div>
+
+                {/* 接続状態テキスト */}
+                <div className="text-center">
+                  <div className={`text-sm font-medium ${connected ? "text-green-400" : "text-gray-400"}`}>
+                    {connected ? "接続中 - お話しください" : "クリックして音声会話を開始"}
+                  </div>
+                  {connected && (
+                    <div className="mt-2 text-xs text-gray-500">
+                      <div className="flex items-center justify-center gap-2">
+                        <span>🔴</span>
+                        <span>再度クリックして会話を終了</span>
+                      </div>
+                      <div className="mt-1 text-gray-600">
+                        会話終了後、シネモが内容を要約して映画を探します
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+
+                {/* 音量インジケーター */}
+                {connected && (
+                  <div className="w-48 text-center">
+                    <div className="text-xs text-gray-500 mb-2">音声レベル</div>
+                    <div className="w-full h-2 bg-gray-700 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-gradient-to-r from-green-400 to-green-500 transition-all duration-100 rounded-full"
+                        style={{ width: `${Math.min(inVolume * 100, 100)}%` }}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* サマライズ中 */}
+                {isSummarizing && (
+                  <div className="text-sm text-blue-400 text-center flex items-center justify-center gap-3 mt-4 p-4 bg-blue-500/10 rounded-xl border border-blue-500/20">
+                    <div className="animate-spin w-4 h-4 border-2 border-blue-400 border-t-transparent rounded-full"></div>
+                    <span>シネモが会話を要約して映画を探しています...</span>
                   </div>
                 )}
               </div>
-            )}
-            {isSummarizing && (
-              <div className="text-xs text-blue-400 text-center flex items-center justify-center gap-2 mt-2">
-                <div className="animate-spin w-3 h-3 border border-blue-400 border-t-transparent rounded-full"></div>
-                AIが会話を要約して映画を探します...
-              </div>
-            )}
-          </div>
+            </div>
+          )}
 
           {/* 送信ボタン */}
-          <div className="mt-5 flex justify-end">
-            <button
-              type="submit"
-              disabled={loading || (!text.trim() && !connected)}
-              className="inline-flex items-center gap-2 rounded-xl border border-red-500/80 px-5 py-3 text-sm font-semibold text-red-400 hover:text-white hover:bg-red-500/90 disabled:opacity-50 transition"
-            >
-              {connected
-                ? "音声会話中（終了後に自動で映画を検索）"
-                : "この気持ちに合う映画を教えて"
-              }
-            </button>
-          </div>
+          {inputMode === "text" && (
+            <div className="mt-6 flex justify-center">
+              <button
+                type="submit"
+                disabled={loading || !text.trim()}
+                className="group relative inline-flex items-center gap-3 rounded-2xl border border-red-500/60 bg-gradient-to-r from-red-600/20 to-red-500/20 px-8 py-4 text-base font-semibold text-red-400 hover:text-white hover:border-red-400 hover:from-red-600/40 hover:to-red-500/40 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300 hover:scale-105 hover:shadow-lg hover:shadow-red-500/20"
+              >
+                <span className="text-xl">🎬</span>
+                <span>この気持ちに合う映画を教えて</span>
+                <div className="absolute inset-0 rounded-2xl bg-gradient-to-r from-red-600/0 to-red-500/0 group-hover:from-red-600/10 group-hover:to-red-500/10 transition-all duration-300" />
+              </button>
+            </div>
+          )}
 
           {error && (
             <div
               role="alert"
-              className="mt-3 rounded-md border border-red-400/40 bg-red-500/10 px-3 py-2 text-sm text-red-200"
+              className="mt-4 rounded-xl border border-red-400/50 bg-gradient-to-r from-red-500/10 to-red-600/10 px-4 py-3 text-sm text-red-200 backdrop-blur-sm shadow-lg flex items-center gap-3"
             >
-              {error}
+              <span className="text-lg">⚠️</span>
+              <span>{error}</span>
             </div>
           )}
         </form>
@@ -687,14 +783,15 @@ function SearchPageContent() {
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 {results.map((m, i) => (
                   <article
-                    key={m.tmdbId ?? `${m.title ?? "item"}-${i}`}
+                    key={`movie-${i}-${m.tmdbId ?? m.title ?? "item"}`}
                     className="rounded-xl border border-white/10 bg-gray-900 p-3"
                   >
                     {m.posterUrl ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
+                      <Image
                         src={m.posterUrl}
                         alt={`${m.title ?? ""}のポスター`}
+                        width={300}
+                        height={450}
                         className="w-full aspect-[2/3] rounded-md object-cover"
                         loading="lazy"
                       />
@@ -720,9 +817,11 @@ function SearchPageContent() {
                 <button
                   type="button"
                   onClick={onResetSearch}
-                  className="inline-flex items-center gap-2 rounded-xl border border-white/50 bg-black/60 px-6 py-3 text-sm md:text-base font-semibold text-white hover:text-white hover:border-white hover:bg-black/80 hover:shadow-[0_0_15px_rgba(255,255,255,0.8)] transition"
+                  className="group relative inline-flex items-center gap-3 rounded-2xl border border-white/40 bg-gradient-to-r from-gray-800/60 to-gray-700/60 px-8 py-4 text-base font-semibold text-white hover:border-white/70 hover:from-gray-700/80 hover:to-gray-600/80 transition-all duration-300 hover:scale-105 hover:shadow-lg hover:shadow-white/10 backdrop-blur-sm"
                 >
-                  もう一度探す
+                  <span className="text-xl">🔄</span>
+                  <span>もう一度探す</span>
+                  <div className="absolute inset-0 rounded-2xl bg-gradient-to-r from-white/0 to-white/0 group-hover:from-white/5 group-hover:to-white/5 transition-all duration-300" />
                 </button>
               </div>
             </section>
