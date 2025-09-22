@@ -9,6 +9,7 @@ import {
 import { StreamingLinks } from "@/components/streaming-links";
 import { useSearchParams } from "next/navigation";
 import { useLiveAPIContext } from "../../contexts/LiveAPIContext";
+import { AudioRecorder } from "@/lib/audio-recorder";
 
 /** 任意の速度でスクロール（CSS smooth より滑らかに） */
 function smoothScrollTo(targetY: number, duration = 1200) {
@@ -536,6 +537,11 @@ function SearchPageContent() {
   const { client, connected, connect, disconnect, volume } =
     useLiveAPIContext();
 
+  // 音声会話処理の state
+  const [muted, setMuted] = useState(false);
+  const [inVolume, setInVolume] = useState(0);
+  const [audioRecorder] = useState(() => new AudioRecorder());
+
   useEffect(() => {
     if (!connected && connectButtonRef.current) {
       connectButtonRef.current.focus();
@@ -566,6 +572,13 @@ function SearchPageContent() {
       audioRecorder.off("data", onData).off("volume", setInVolume);
     };
   }, [connected, client, muted, audioRecorder]);
+
+  // コンポーネントアンマウント時のクリーンアップ
+  useEffect(() => {
+    return () => {
+      audioRecorder.stop();
+    };
+  }, [audioRecorder]);
 
   return (
     <main className="min-h-screen bg-black text-white px-6 py-12">
@@ -649,21 +662,51 @@ function SearchPageContent() {
           </div>
 
           {/* 音声会話 */}
-          {/* <div className={cn("connection-container", { connected })}> */}
-          <div className="connection-container">
-            <div className="connection-button-container">
+          <div className="mt-4 flex flex-col items-center gap-3">
+            <label className="text-sm text-gray-400">
+              音声で会話する（AIがあなたの気持ちを聞いてくれます）
+            </label>
+            <div className="flex items-center gap-3">
               <button
                 ref={connectButtonRef}
-                className={`inline-flex items-center justify-center rounded-full bg-red-600 hover:bg-red-700 transition shadow-lg w-14 h-14 text-white text-3xl focus:outline-none focus:ring-2 focus:ring-red-400 ${
-                  connected ? "opacity-90" : "opacity-100"
+                className={`inline-flex items-center justify-center rounded-full transition shadow-lg w-14 h-14 text-white text-3xl focus:outline-none focus:ring-2 focus:ring-red-400 ${
+                  connected
+                    ? "bg-green-600 hover:bg-green-700"
+                    : "bg-red-600 hover:bg-red-700"
                 }`}
                 onClick={connected ? disconnect : connect}
+                disabled={loading}
+                title={connected ? "音声接続を切断" : "音声接続を開始"}
               >
-                <span className="material-symbols-outlined filled">
-                  {connected ? "pause" : "play"}
-                </span>
+                🎤
               </button>
+              {connected && (
+                <button
+                  className={`inline-flex items-center justify-center rounded-full transition shadow-lg w-12 h-12 text-white focus:outline-none focus:ring-2 focus:ring-gray-400 ${
+                    muted
+                      ? "bg-gray-600 hover:bg-gray-700"
+                      : "bg-blue-600 hover:bg-blue-700"
+                  }`}
+                  onClick={() => setMuted(!muted)}
+                  title={muted ? "ミュート解除" : "ミュート"}
+                >
+                  {muted ? "🔇" : "🔊"}
+                </button>
+              )}
             </div>
+            {connected && (
+              <div className="text-xs text-gray-500 text-center">
+                {muted ? "音声入力がミュートされています" : "音声入力中..."}
+                {!muted && inVolume > 0 && (
+                  <div className="mt-1 w-32 h-1 bg-gray-700 rounded-full mx-auto overflow-hidden">
+                    <div
+                      className="h-full bg-green-500 transition-all duration-100"
+                      style={{ width: `${Math.min(inVolume * 100, 100)}%` }}
+                    />
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* 送信ボタン */}

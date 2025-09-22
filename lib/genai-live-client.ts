@@ -190,7 +190,7 @@ export class GenAILiveClient extends EventEmitter<LiveClientEventTypes> {
       //   callbacks,
       // });
       this._session = await this.client.live.connect({
-        model,
+        model: customeModel,
         config: customConfig,
         callbacks,
       });
