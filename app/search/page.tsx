@@ -7,6 +7,7 @@ import {
   useCallback,
   useMemo,
 } from "react";
+import Image from "next/image";
 import { StreamingLinks } from "@/components/streaming-links";
 import { useSearchParams } from "next/navigation";
 import { useLiveAPIContext } from "../../contexts/LiveAPIContext";
@@ -297,7 +298,6 @@ function SearchPageContent() {
     useLiveAPIContext();
 
   // 音声会話処理の state
-  const [muted, setMuted] = useState(false);
   const [inVolume, setInVolume] = useState(0);
   const [audioRecorder] = useState(() => {
     // SSR環境では空のオブジェクトを返す
@@ -441,7 +441,7 @@ function SearchPageContent() {
       }
     };
 
-    if (connected && !muted && audioRecorder) {
+    if (connected && audioRecorder) {
       startAudioRecording();
     } else if (audioRecorder) {
       audioRecorder.stop();
@@ -451,7 +451,7 @@ function SearchPageContent() {
         audioRecorder.off("data", onData).off("volume", setInVolume);
       }
     };
-  }, [connected, client, muted, audioRecorder, disconnect]);
+  }, [connected, client, audioRecorder, disconnect]);
 
   // コンポーネントアンマウント時のクリーンアップ
   useEffect(() => {
@@ -592,10 +592,10 @@ function SearchPageContent() {
             <div className="space-y-6">
               <div className="text-center">
                 <h3 className="text-lg font-medium text-gray-200 mb-2">
-                  AIと音声で会話しましょう
+                  シネモと音声で会話しましょう
                 </h3>
                 <p className="text-sm text-gray-400">
-                  AIがあなたの気持ちを聞いてくれます
+                  シネモがあなたの気持ちを聞いてくれます
                   <br />
                   <span className="text-xs text-gray-500">
                     会話終了後、内容が自動でテキスト欄に入力され映画を探します
@@ -616,7 +616,7 @@ function SearchPageContent() {
                     }`}
                     onClick={connected ? disconnect : connect}
                     disabled={loading}
-                    title={connected ? "音声接続を切断" : "音声接続を開始"}
+                    title={connected ? "クリックして音声会話を終了（会話内容を要約して映画を探します）" : "クリックして音声会話を開始"}
                   >
                     {/* 背景グラデーション */}
                     <div className={`absolute inset-0 rounded-full transition-all duration-300 ${
@@ -627,9 +627,11 @@ function SearchPageContent() {
 
                     {/* Cinemo画像 */}
                     <div className="relative z-10 w-20 h-20 rounded-full overflow-hidden bg-white/90 flex items-center justify-center">
-                      <img
+                      <Image
                         src="/cinemo.png"
                         alt="Cinemo"
+                        width={112}
+                        height={112}
                         className="w-28 h-28 object-contain"
                       />
                     </div>
@@ -651,28 +653,22 @@ function SearchPageContent() {
                   <div className={`text-sm font-medium ${connected ? "text-green-400" : "text-gray-400"}`}>
                     {connected ? "接続中 - お話しください" : "クリックして音声会話を開始"}
                   </div>
+                  {connected && (
+                    <div className="mt-2 text-xs text-gray-500">
+                      <div className="flex items-center justify-center gap-2">
+                        <span>🔴</span>
+                        <span>再度クリックして会話を終了</span>
+                      </div>
+                      <div className="mt-1 text-gray-600">
+                        会話終了後、シネモが内容を要約して映画を探します
+                      </div>
+                    </div>
+                  )}
                 </div>
 
-                {/* 追加コントロール */}
-                {connected && (
-                  <div className="flex items-center gap-4">
-                    <button
-                      type="button"
-                      className={`inline-flex items-center justify-center rounded-full transition-all duration-200 shadow-lg w-12 h-12 text-lg focus:outline-none focus:ring-2 ${
-                        muted
-                          ? "bg-gray-600 hover:bg-gray-700 focus:ring-gray-400 text-gray-300"
-                          : "bg-blue-600 hover:bg-blue-700 focus:ring-blue-400 text-white hover:scale-105"
-                      }`}
-                      onClick={() => setMuted(!muted)}
-                      title={muted ? "ミュート解除" : "ミュート"}
-                    >
-                      {muted ? "🔇" : "🔊"}
-                    </button>
-                  </div>
-                )}
 
                 {/* 音量インジケーター */}
-                {connected && !muted && (
+                {connected && (
                   <div className="w-48 text-center">
                     <div className="text-xs text-gray-500 mb-2">音声レベル</div>
                     <div className="w-full h-2 bg-gray-700 rounded-full overflow-hidden">
@@ -688,7 +684,7 @@ function SearchPageContent() {
                 {isSummarizing && (
                   <div className="text-sm text-blue-400 text-center flex items-center justify-center gap-3 mt-4 p-4 bg-blue-500/10 rounded-xl border border-blue-500/20">
                     <div className="animate-spin w-4 h-4 border-2 border-blue-400 border-t-transparent rounded-full"></div>
-                    <span>AIが会話を要約して映画を探しています...</span>
+                    <span>シネモが会話を要約して映画を探しています...</span>
                   </div>
                 )}
               </div>
@@ -787,14 +783,15 @@ function SearchPageContent() {
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 {results.map((m, i) => (
                   <article
-                    key={m.tmdbId ?? `${m.title ?? "item"}-${i}`}
+                    key={`movie-${i}-${m.tmdbId ?? m.title ?? "item"}`}
                     className="rounded-xl border border-white/10 bg-gray-900 p-3"
                   >
                     {m.posterUrl ? (
-                      // eslint-disable-next-line @next/next/no-img-element
-                      <img
+                      <Image
                         src={m.posterUrl}
                         alt={`${m.title ?? ""}のポスター`}
+                        width={300}
+                        height={450}
                         className="w-full aspect-[2/3] rounded-md object-cover"
                         loading="lazy"
                       />
