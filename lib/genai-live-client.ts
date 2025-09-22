@@ -90,7 +90,7 @@ interface MessageContent {
  * If you dont want to use react you can still use this.
  */
 export class GenAILiveClient extends EventEmitter<LiveClientEventTypes> {
-  protected client: GoogleGenAI;
+  protected client: GoogleGenAI | null = null;
 
   // メッセージを蓄積するための配列とバッファ
   protected messageHistory: MessageHistoryItem[] = []; // 完成したメッセージの履歴
@@ -125,9 +125,9 @@ export class GenAILiveClient extends EventEmitter<LiveClientEventTypes> {
     return { ...this.config };
   }
 
-  constructor(options: LiveClientOptions) {
+  constructor() {
     super();
-    this.client = new GoogleGenAI(options);
+    // クライアントは接続時に一時トークンで初期化
     this.send = this.send.bind(this);
     this.onopen = this.onopen.bind(this);
     this.onerror = this.onerror.bind(this);
@@ -153,44 +153,61 @@ export class GenAILiveClient extends EventEmitter<LiveClientEventTypes> {
     this.config = config;
     this._model = model;
 
-    const callbacks: LiveCallbacks = {
-      onopen: this.onopen,
-      onmessage: this.onmessage,
-      onerror: this.onerror,
-      onclose: this.onclose,
-    };
+    try {
+      // 一時トークンを取得
+      const tokenResponse = await fetch("/api/auth-token", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+      });
 
-    const customeModel = "models/gemini-2.5-flash-preview-native-audio-dialog";
+      if (!tokenResponse.ok) {
+        throw new Error(`Failed to get auth token: ${tokenResponse.status}`);
+      }
 
-    const customConfig: LiveConnectConfig = {
-      responseModalities: [Modality.AUDIO],
-      mediaResolution: MediaResolution.MEDIA_RESOLUTION_MEDIUM,
-      inputAudioTranscription: {},
-      outputAudioTranscription: {},
-      speechConfig: {
-        voiceConfig: {
-          prebuiltVoiceConfig: {
-            voiceName: "Zephyr",
+      const data = await tokenResponse.json();
+      const token = data.token;
+
+      const callbacks: LiveCallbacks = {
+        onopen: this.onopen,
+        onmessage: this.onmessage,
+        onerror: this.onerror,
+        onclose: this.onclose,
+      };
+
+      const customModel = "models/gemini-2.5-flash-preview-native-audio-dialog";
+
+      const customConfig: LiveConnectConfig = {
+        responseModalities: [Modality.AUDIO],
+        mediaResolution: MediaResolution.MEDIA_RESOLUTION_MEDIUM,
+        inputAudioTranscription: {},
+        outputAudioTranscription: {},
+        speechConfig: {
+          voiceConfig: {
+            prebuiltVoiceConfig: {
+              voiceName: "Zephyr",
+            },
           },
         },
-      },
-      systemInstruction: {
-        parts: [
-          {
-            text: `あなたは心理カウンセラーです。今日の出来事や思ったことをヒアリングして、ユーザーの感情を深堀りすることに徹してください。簡潔に答えてください。`,
-          },
-        ],
-      },
-    };
+        systemInstruction: {
+          parts: [
+            {
+              text: `あなたは心理カウンセラーです。今日の出来事や思ったことをヒアリングして、ユーザーの感情を深堀りすることに徹してください。簡潔に答えてください。`,
+            },
+          ],
+        },
+      };
 
-    try {
-      // this._session = await this.client.live.connect({
-      //   model,
-      //   config,
-      //   callbacks,
-      // });
+      // 一時トークンでクライアントを初期化
+      this.client = new GoogleGenAI({
+        apiKey: token,
+        httpOptions: { apiVersion: "v1alpha" },
+      });
+
+      // Live APIに接続
       this._session = await this.client.live.connect({
-        model,
+        model: customModel,
         config: customConfig,
         callbacks,
       });
@@ -212,6 +229,7 @@ export class GenAILiveClient extends EventEmitter<LiveClientEventTypes> {
 
     this.session?.close();
     this._session = null;
+    this.client = null; // クライアントもクリア
     this._status = "disconnected";
 
     this.log("client.close", `Disconnected`);

@@ -16,7 +16,6 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { GenAILiveClient } from "@/lib/genai-live-client";
-import { LiveClientOptions } from "@/app/types";
 import { AudioStreamer } from "@/lib/audio-streamer";
 import { audioContext } from "@/lib/utils";
 import VolMeterWorket from "@/lib/worklets/vol-meter";
@@ -36,8 +35,8 @@ export type UseLiveAPIResults = {
   clearConversationHistory: () => void;
 };
 
-export function useLiveAPI(options: LiveClientOptions): UseLiveAPIResults {
-  const client = useMemo(() => new GenAILiveClient(options), [options]);
+export function useLiveAPI(): UseLiveAPIResults {
+  const client = useMemo(() => new GenAILiveClient(), []);
   const audioStreamerRef = useRef<AudioStreamer | null>(null);
 
   const [model, setModel] = useState<string>("models/gemini-2.0-flash-exp");

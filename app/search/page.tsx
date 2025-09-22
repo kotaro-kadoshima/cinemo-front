@@ -2,9 +2,10 @@
 import {
   useEffect,
   useState,
-  type CSSProperties,
   Suspense,
   useRef,
+  useCallback,
+  useMemo,
 } from "react";
 import { StreamingLinks } from "@/components/streaming-links";
 import { useSearchParams } from "next/navigation";
@@ -27,198 +28,6 @@ function smoothScrollTo(targetY: number, duration = 1200) {
   requestAnimationFrame(step);
 }
 
-/** 巨大カーテン・インタールード（ポスターと結果の間に挟む） */
-function CurtainInterlude({
-  onReveal,
-  revealed,
-}: {
-  onReveal?: () => void;
-  revealed?: boolean;
-}) {
-  const [phase, setPhase] = useState<"idle" | "opening" | "opened">("idle");
-  const [prefersReduced, setPrefersReduced] = useState(false);
-  useEffect(() => {
-    const m = window.matchMedia("(prefers-reduced-motion: reduce)");
-    const listener = () => setPrefersReduced(m.matches);
-    listener();
-    m.addEventListener?.("change", listener);
-    return () => m.removeEventListener?.("change", listener);
-  }, []);
-
-  function openCurtain() {
-    if (phase !== "idle") return;
-    setPhase("opening");
-    const total = prefersReduced ? 400 : 1200;
-    setTimeout(() => {
-      setPhase("opened");
-      onReveal?.();
-      const el = document.getElementById("results");
-      el?.scrollIntoView({
-        behavior: prefersReduced ? "auto" : "smooth",
-        block: "start",
-      });
-    }, total);
-  }
-
-  // 背景のスポットライトとダストは inline style で再現（追加CSS不要）
-  const bgStyle: CSSProperties = {
-    backgroundImage: `
-      radial-gradient(80% 50% at 50% 30%, rgba(255,255,255,0.16), rgba(255,255,255,0.02) 60%, transparent 70%),
-      radial-gradient(60% 40% at 50% 70%, rgba(255,255,255,0.08), transparent 60%)
-    `,
-  };
-  const dustStyle: CSSProperties = {
-    backgroundImage:
-      "radial-gradient(rgba(255,255,255,0.06) 1px, transparent 1px), radial-gradient(rgba(255,255,255,0.04) 1px, transparent 1px)",
-    backgroundSize: "3px 3px, 2px 2px",
-    backgroundPosition: "0 0, 1px 1px",
-    opacity: 0.25,
-  };
-  const vignetteStyle: CSSProperties = {
-    background:
-      "radial-gradient(120% 80% at 50% 50%, rgba(0,0,0,0) 55%, rgba(0,0,0,0.5) 100%)",
-    opacity: 0.6,
-  };
-  const curtainStripe =
-    "repeating-linear-gradient(90deg, rgba(185,28,28,0.95) 0 12px, rgba(127,19,19,0.95) 12px 24px)";
-
-  return (
-    <section
-      className="relative my-24 overflow-hidden rounded-3xl shadow-[0_40px_160px_rgba(0,0,0,0.5)]"
-      style={{ perspective: 1600 }}
-    >
-      <div className="relative min-h-[60vh] md:min-h-[70vh] bg-black">
-        {/* 背景のスポットライトと粒子 */}
-        <div
-          className="absolute inset-0 pointer-events-none mix-blend-screen"
-          style={bgStyle}
-        />
-        <div
-          className="absolute inset-0 pointer-events-none"
-          style={dustStyle}
-        />
-
-        {/* タイトル・コピー */}
-        <div className="relative z-10 flex h-full flex-col items-center justify-center text-center px-6">
-          <div className="text-[10px] md:text-xs tracking-[0.35em] text-gray-400 uppercase">
-            Feature Presentation
-          </div>
-          <h2 className="mt-2 text-3xl md:text-5xl font-extrabold tracking-widest uppercase drop-shadow">
-            Now Showing For You
-          </h2>
-          <p className="mt-3 text-sm md:text-base text-gray-300">
-            いまの気持ちに寄り添う3本をセレクトしました
-          </p>
-
-          {/* 大きめの区切り（光のライン） */}
-          <div className="mt-10 h-1 w-64 mx-auto bg-gradient-to-r from-transparent via-red-500 to-transparent rounded-full" />
-
-          {/* 開幕ボタン（phase !== 'idle'時は不可視でスペース維持） */}
-          <button
-            onClick={openCurtain}
-            aria-label="幕を開ける"
-            className={`mt-10 inline-flex items-center gap-2 rounded-xl border border-white/50 bg-gradient-to-b from-white/10 to-black/60 px-6 py-3 text-sm md:text-base font-semibold text-white hover:text-white hover:border-white hover:shadow-[0_10px_30px_rgba(255,255,255,0.25)] transition ${
-              phase !== "idle" ? "invisible pointer-events-none" : ""
-            }`}
-          >
-            🎬 幕を開ける
-          </button>
-        </div>
-
-        {/* ヴィネット */}
-        <div
-          aria-hidden
-          className="absolute inset-0 pointer-events-none"
-          style={vignetteStyle}
-        />
-
-        {/* 左カーテン */}
-        <div
-          aria-hidden
-          className="absolute top-[-6%] bottom-[-6%] left-[-3%] w-[58%] border-r border-white/10 will-change-transform will-change-filter"
-          style={{
-            backgroundImage: curtainStripe,
-            boxShadow:
-              "inset 0 0 80px rgba(0,0,0,0.55), 0 0 120px rgba(255,0,0,0.18)",
-            transition: prefersReduced
-              ? "transform 400ms ease-out, filter 400ms ease-out"
-              : "transform 1200ms cubic-bezier(.22,.61,.36,1), filter 1200ms cubic-bezier(.22,.61,.36,1)",
-            transform:
-              phase === "idle"
-                ? "translateX(0) rotateY(0deg) skewY(0deg)"
-                : phase === "opening"
-                ? "translateX(-96%) rotateY(-22deg) skewY(-1.5deg)"
-                : "translateX(-120%) rotateY(-28deg) skewY(-2deg)",
-            filter:
-              phase === "opening"
-                ? "saturate(1.1) brightness(1.05) blur(0.6px)"
-                : "none",
-            transformStyle: "preserve-3d",
-          }}
-        >
-          {/* 光のスイープ */}
-          <div
-            className="absolute inset-y-0 -left-1/3 w-1/3 pointer-events-none"
-            style={{
-              background:
-                "linear-gradient(75deg, rgba(255,255,255,0.0) 0%, rgba(255,255,255,0.22) 40%, rgba(255,255,255,0.0) 80%)",
-              transition: prefersReduced
-                ? "transform 400ms ease-out"
-                : "transform 900ms ease-out",
-              transform:
-                phase === "opening" || phase === "opened"
-                  ? "translateX(220%)"
-                  : "translateX(0%)",
-              mixBlendMode: "screen",
-            }}
-          />
-        </div>
-
-        {/* 右カーテン */}
-        <div
-          aria-hidden
-          className="absolute top-[-6%] bottom-[-6%] right-[-3%] w-[58%] border-l border-white/10 will-change-transform will-change-filter"
-          style={{
-            backgroundImage: curtainStripe,
-            boxShadow:
-              "inset 0 0 80px rgba(0,0,0,0.55), 0 0 120px rgba(255,0,0,0.18)",
-            transition: prefersReduced
-              ? "transform 400ms ease-out, filter 400ms ease-out"
-              : "transform 1200ms cubic-bezier(.22,.61,.36,1), filter 1200ms cubic-bezier(.22,.61,.36,1)",
-            transform:
-              phase === "idle"
-                ? "translateX(0) rotateY(0deg) skewY(0deg)"
-                : phase === "opening"
-                ? "translateX(96%) rotateY(22deg) skewY(1.5deg)"
-                : "translateX(120%) rotateY(28deg) skewY(2deg)",
-            filter:
-              phase === "opening"
-                ? "saturate(1.1) brightness(1.05) blur(0.6px)"
-                : "none",
-            transformStyle: "preserve-3d",
-          }}
-        >
-          {/* 光のスイープ */}
-          <div
-            className="absolute inset-y-0 -right-1/3 w-1/3 pointer-events-none"
-            style={{
-              background:
-                "linear-gradient(105deg, rgba(255,255,255,0.0) 0%, rgba(255,255,255,0.22) 40%, rgba(255,255,255,0.0) 80%)",
-              transition: prefersReduced
-                ? "transform 400ms ease-out"
-                : "transform 900ms ease-out",
-              transform:
-                phase === "opening" || phase === "opened"
-                  ? "translateX(-220%)"
-                  : "translateX(0%)",
-              mixBlendMode: "screen",
-            }}
-          />
-        </div>
-      </div>
-    </section>
-  );
-}
 
 /** 背面から“拡大＋フェード”で登場させるラッパー */
 function BackZoomReveal({
@@ -366,35 +175,6 @@ const EXAMPLES = [
   "プレゼンがうまくいって自信がついた",
 ];
 
-const COUNTRY_OPTIONS = [
-  { value: "", label: "すべて" },
-  { value: "japan", label: "邦画" },
-  { value: "korea", label: "韓国" },
-  { value: "india", label: "インド" },
-  { value: "other", label: "その他洋画" },
-] as const;
-
-const GENRE_OPTIONS = [
-  "アクション",
-  "アドベンチャー",
-  "アニメーション",
-  "コメディ",
-  "サイエンスフィクション",
-  "スリラー",
-  "テレビ映画",
-  "ドキュメンタリー",
-  "ドラマ",
-  "ファミリー",
-  "ファンタジー",
-  "ホラー",
-  "ロマンス",
-  "履歴",
-  "戦争",
-  "犯罪",
-  "西洋",
-  "謎",
-  "音楽",
-] as const;
 
 function SearchPageContent() {
   const [text, setText] = useState("");
@@ -415,10 +195,10 @@ function SearchPageContent() {
   const searchParams = useSearchParams();
   const showStreaming = searchParams.get("streaming") === "true";
 
-  // NEW: フィルタ
-  const [country, setCountry] = useState<string>(""); // '', 'japan', 'korea', 'india', 'other'
-  const [genres, setGenres] = useState<string[]>([]);
-  const [limit] = useState<number>(3);
+  // フィルタ設定
+  const country = "";
+  const genres = useMemo(() => [], []);
+  const limit = 3;
 
   // 結果が用意できて、オーバーレイが完全に消えたら自動スクロール（位置ズレ防止）
   useEffect(() => {
@@ -511,7 +291,7 @@ function SearchPageContent() {
   }
 
   const connectButtonRef = useRef<HTMLButtonElement>(null);
-  const { client, connected, connect, disconnect, volume, getConversationAsText, clearConversationHistory } =
+  const { client, connected, connect, disconnect, getConversationAsText, clearConversationHistory } =
     useLiveAPIContext();
 
   // 音声会話処理の state
@@ -537,23 +317,43 @@ function SearchPageContent() {
     }
   }, [connected]);
 
-  // 音声接続が切断された時に会話履歴をGeminiで要約してテキストエリアに設定
-  useEffect(() => {
-    if (wasConnected && !connected) {
-      // 接続が切断された時
-      const conversationText = getConversationAsText();
-      if (conversationText.trim()) {
-        // 会話を要約してからテキストエリアに設定
-        summarizeAndSetText(conversationText);
-        // 会話履歴をクリア（次回の会話のため）
-        clearConversationHistory();
-      }
+  // 映画検索を実行する関数
+  const handleMovieSearch = useCallback(async (mood: string) => {
+    setError(null);
+    setResults(null);
+    setRevealed(false);
+
+    // ① 入力テキストをそのまま「ポスターのタイトル」にする
+    setPosterText(mood);
+    setOverlayPhase("idle");
+    // 入力ブロックを高級感のあるアニメーションで消す
+    setFormPhase("collapsing");
+    setTimeout(() => setFormPhase("hidden"), 800);
+
+    // ② レコメンド取得（フィルタ同梱）
+    setLoading(true);
+    try {
+      const r = await fetch("/api/recommend", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mood, country, genres, limit }),
+      });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const data: RecommendResponse = await r.json();
+      setResults(Array.isArray(data.items) ? data.items : []);
+    } catch (e: unknown) {
+      const msg =
+        e instanceof Error
+          ? e.message
+          : "取得に失敗しました。少し時間をおいて再実行してください。";
+      setError(msg);
+    } finally {
+      setLoading(false);
     }
-    setWasConnected(connected);
-  }, [connected, wasConnected, getConversationAsText, clearConversationHistory]);
+  }, [country, genres, limit]);
 
   // 会話を要約してテキストエリアに設定する関数
-  const summarizeAndSetText = async (conversationText: string) => {
+  const summarizeAndSetText = useCallback(async (conversationText: string) => {
     setIsSummarizing(true);
     try {
       const response = await fetch('/api/summarize-conversation', {
@@ -589,42 +389,22 @@ function SearchPageContent() {
     } finally {
       setIsSummarizing(false);
     }
-  };
+  }, [setText, handleMovieSearch]);
 
-  // 映画検索を実行する関数
-  const handleMovieSearch = async (mood: string) => {
-    setError(null);
-    setResults(null);
-    setRevealed(false);
-
-    // ① 入力テキストをそのまま「ポスターのタイトル」にする
-    setPosterText(mood);
-    setOverlayPhase("idle");
-    // 入力ブロックを高級感のあるアニメーションで消す
-    setFormPhase("collapsing");
-    setTimeout(() => setFormPhase("hidden"), 800);
-
-    // ② レコメンド取得（フィルタ同梱）
-    setLoading(true);
-    try {
-      const r = await fetch("/api/recommend", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mood, country, genres, limit }),
-      });
-      if (!r.ok) throw new Error(`HTTP ${r.status}`);
-      const data: RecommendResponse = await r.json();
-      setResults(Array.isArray(data.items) ? data.items : []);
-    } catch (e: unknown) {
-      const msg =
-        e instanceof Error
-          ? e.message
-          : "取得に失敗しました。少し時間をおいて再実行してください。";
-      setError(msg);
-    } finally {
-      setLoading(false);
+  // 音声接続が切断された時に会話履歴をGeminiで要約してテキストエリアに設定
+  useEffect(() => {
+    if (wasConnected && !connected) {
+      // 接続が切断された時
+      const conversationText = getConversationAsText();
+      if (conversationText.trim()) {
+        // 会話を要約してからテキストエリアに設定
+        summarizeAndSetText(conversationText);
+        // 会話履歴をクリア（次回の会話のため）
+        clearConversationHistory();
+      }
     }
-  };
+    setWasConnected(connected);
+  }, [connected, wasConnected, getConversationAsText, clearConversationHistory, summarizeAndSetText]);
   useEffect(() => {
     document.documentElement.style.setProperty(
       "--volume",
