@@ -819,7 +819,6 @@ function SearchPageContent() {
                   onClick={onResetSearch}
                   className="group relative inline-flex items-center gap-3 rounded-2xl border border-white/40 bg-gradient-to-r from-gray-800/60 to-gray-700/60 px-8 py-4 text-base font-semibold text-white hover:border-white/70 hover:from-gray-700/80 hover:to-gray-600/80 transition-all duration-300 hover:scale-105 hover:shadow-lg hover:shadow-white/10 backdrop-blur-sm"
                 >
-                  <span className="text-xl">🔄</span>
                   <span>もう一度探す</span>
                   <div className="absolute inset-0 rounded-2xl bg-gradient-to-r from-white/0 to-white/0 group-hover:from-white/5 group-hover:to-white/5 transition-all duration-300" />
                 </button>
