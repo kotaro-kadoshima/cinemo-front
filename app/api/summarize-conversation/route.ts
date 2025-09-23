@@ -1,16 +1,22 @@
 import { NextResponse } from "next/server";
 import { GoogleGenAI } from "@google/genai";
 
-const API_KEY = process.env.GEMINI_API_KEY;
-
-if (!API_KEY) {
-  throw new Error("GEMINI_API_KEY is not set in environment variables");
-}
-
-const genAI = new GoogleGenAI({ apiKey: API_KEY });
-
 export async function POST(req: Request) {
   try {
+    const API_KEY = process.env.GEMINI_API_KEY;
+
+    if (!API_KEY) {
+      return NextResponse.json(
+        {
+          error: "Server configuration error",
+          detail: "API key not configured",
+        },
+        { status: 500 }
+      );
+    }
+
+    const genAI = new GoogleGenAI({ apiKey: API_KEY });
+
     const { conversation } = await req.json();
 
     if (typeof conversation !== "string" || conversation.trim() === "") {
