@@ -12,6 +12,7 @@ import { StreamingLinks } from "@/components/streaming-links";
 import { useSearchParams } from "next/navigation";
 import { useLiveAPIContext } from "../../contexts/LiveAPIContext";
 import { AudioRecorder } from "@/lib/audio-recorder";
+import { CinemoStage, type CinemoMood } from "@/components/cinemo/cinemo-stage";
 
 /** 任意の速度でスクロール（CSS smooth より滑らかに） */
 function smoothScrollTo(targetY: number, duration = 1200) {
@@ -194,6 +195,7 @@ function SearchPageContent() {
     "idle"
   );
   const [inputMode, setInputMode] = useState<"text" | "voice">("text");
+  const formHideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const searchParams = useSearchParams();
   const showStreaming = searchParams.get("streaming") === "true";
 
@@ -294,8 +296,15 @@ function SearchPageContent() {
   }
 
   const connectButtonRef = useRef<HTMLButtonElement>(null);
-  const { client, connected, connect, disconnect, getConversationAsText, clearConversationHistory } =
-    useLiveAPIContext();
+  const {
+    client,
+    connected,
+    connect,
+    disconnect,
+    volume: cinemoVoiceVolume,
+    getConversationAsText,
+    clearConversationHistory,
+  } = useLiveAPIContext();
 
   // 音声会話処理の state
   const [inVolume, setInVolume] = useState(0);
@@ -330,7 +339,10 @@ function SearchPageContent() {
     setOverlayPhase("idle");
     // 入力ブロックを高級感のあるアニメーションで消す
     setFormPhase("collapsing");
-    setTimeout(() => setFormPhase("hidden"), 800);
+    if (formHideTimer.current) clearTimeout(formHideTimer.current);
+    formHideTimer.current = setTimeout(() => setFormPhase("hidden"), 800);
+    // 待っている間、踊っているシネモが見えるように上へ戻す
+    smoothScrollTo(0, 700);
 
     // ② レコメンド取得（フィルタ同梱）
     setLoading(true);
@@ -344,11 +356,14 @@ function SearchPageContent() {
       const data: RecommendResponse = await r.json();
       setResults(Array.isArray(data.items) ? data.items : []);
     } catch (e: unknown) {
-      const msg =
-        e instanceof Error
-          ? e.message
-          : "取得に失敗しました。少し時間をおいて再実行してください。";
-      setError(msg);
+      const detail = e instanceof Error ? `（${e.message}）` : "";
+      // フォームを戻さないと、エラー表示が隠れたまま「映画を選んでいます…」が回り続けてしまう
+      if (formHideTimer.current) clearTimeout(formHideTimer.current);
+      setPosterText(null);
+      setFormPhase("shown");
+      setError(
+        `映画を見つけられませんでした${detail}。少し時間をおいてもう一度お試しください。`
+      );
     } finally {
       setLoading(false);
     }
@@ -357,6 +372,7 @@ function SearchPageContent() {
   // 会話を要約してテキストエリアに設定する関数
   const summarizeAndSetText = useCallback(async (conversationText: string) => {
     setIsSummarizing(true);
+    let handedOffToSearch = false;
     try {
       const response = await fetch('/api/summarize-conversation', {
         method: 'POST',
@@ -373,8 +389,10 @@ function SearchPageContent() {
       const data = await response.json();
       if (data.summary) {
         setText(data.summary);
+        handedOffToSearch = true;
         // 要約完了後、少し待ってから映画検索を促す
         setTimeout(() => {
+          setIsSummarizing(false);
           if (data.summary.trim()) {
             // 自動的に映画検索を実行
             handleMovieSearch(data.summary.trim());
@@ -389,7 +407,7 @@ function SearchPageContent() {
       // 要約に失敗した場合は元の会話をそのまま使用
       setText(conversationText);
     } finally {
-      setIsSummarizing(false);
+      if (!handedOffToSearch) setIsSummarizing(false);
     }
   }, [setText, handleMovieSearch]);
 
@@ -462,6 +480,38 @@ function SearchPageContent() {
     };
   }, [audioRecorder]);
 
+  // シネモの気分：待ち時間は踊る、会話中は聞く、結果が出たら喜ぶ
+  const cinemoMood: CinemoMood =
+    loading || isSummarizing
+      ? "dancing"
+      : error
+        ? "sad"
+        : connected
+          ? "listening"
+          : results && results.length > 0 && overlayPhase === "idle"
+            ? "happy"
+            : "idle";
+
+  const cinemoMessage = (() => {
+    switch (cinemoMood) {
+      case "dancing":
+        return isSummarizing
+          ? "お話をまとめながら踊ってるよ♪"
+          : "踊りながら映画を選んでるよ♪ ちょっと待っててね";
+      case "sad":
+        return "うまくいかなかったみたい…もう一度ためしてみて";
+      case "listening":
+        return "うんうん、聞いてるよ。話し終わったら下のボクをもう一度押してね";
+      case "happy":
+        return "見つかったよ！下の「表示する」を押してね";
+      default:
+        if (results) return "気になる映画は見つかった？";
+        return inputMode === "voice"
+          ? "下のボクのボタンを押して、話しかけてね！"
+          : "やあ、シネモだよ！今日のこと、聞かせてね♪";
+    }
+  })();
+
   return (
     <main className="min-h-screen bg-black text-white px-6 py-12">
       {/* ヘッダ */}
@@ -479,6 +529,15 @@ function SearchPageContent() {
           <p className="mt-2 text-gray-400">心が求める映画を</p>
         </section>
       </section>
+
+      {/* 3D のシネモ（待ち時間は踊って待つ） */}
+      <CinemoStage
+        className="mt-2"
+        mood={cinemoMood}
+        message={cinemoMessage}
+        speakingVolume={connected ? cinemoVoiceVolume : 0}
+        listeningVolume={connected ? inVolume : 0}
+      />
 
       {/* 入力カード */}
       <section
@@ -564,7 +623,10 @@ function SearchPageContent() {
                   id="mood"
                   rows={5}
                   value={text}
-                  onChange={(e) => setText(e.target.value)}
+                  onChange={(e) => {
+                    setText(e.target.value);
+                    if (error) setError(null);
+                  }}
                   placeholder={`例：上司に褒められて嬉しかった。\n例：恋人と喧嘩して心がざわざわしてる。\n例：仕事でくたびれて何も考えたくない。`}
                   className="w-full resize-none rounded-lg bg-[#111827] text-white/90 px-4 py-3 outline-none placeholder:text-gray-500 focus:ring-2 focus:ring-red-500/60"
                 />

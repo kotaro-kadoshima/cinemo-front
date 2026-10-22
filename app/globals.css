@@ -222,3 +222,71 @@ body {
 @media (max-width: 768px) {
   .curtain { width: 60%; }
 }
+/* ===== シネモ（3D キャラクター） ===== */
+.cinemo-fade-in {
+  animation: cinemoFadeIn 700ms ease-out both;
+}
+@keyframes cinemoFadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* 吹き出し（上向きのしっぽ付き）。セリフが変わるたびにポンと出る */
+.cinemo-bubble {
+  animation: cinemoBubbleIn 420ms cubic-bezier(.2,.9,.3,1.3) both;
+}
+.cinemo-bubble::before {
+  content: "";
+  position: absolute;
+  top: -7px;
+  left: 50%;
+  width: 12px;
+  height: 12px;
+  transform: translateX(-50%) rotate(45deg);
+  background: inherit;
+  border-left: inherit;
+  border-top: inherit;
+}
+@keyframes cinemoBubbleIn {
+  from { opacity: 0; transform: translateY(6px) scale(.92); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* 踊っている間に舞う音符 */
+.cinemo-note {
+  opacity: 0;
+  animation: cinemoNote 2.4s ease-out infinite;
+  text-shadow: 0 0 12px rgba(239, 68, 68, .6);
+}
+@keyframes cinemoNote {
+  0%   { transform: translate(0, 0) rotate(-12deg) scale(.6); opacity: 0; }
+  15%  { opacity: 1; }
+  100% { transform: translate(var(--drift, 12px), -130px) rotate(14deg) scale(1.1); opacity: 0; }
+}
+
+/* WebGL が使えないときの 2D 版シネモ */
+.cinemo-2d { transform-origin: 50% 70%; }
+.cinemo-2d-idle      { animation: cinemo2dSway 1.2s ease-in-out infinite alternate; }
+.cinemo-2d-listening { animation: cinemo2dSway 1.6s ease-in-out infinite alternate; }
+.cinemo-2d-dancing   { animation: cinemo2dDance .48s ease-in-out infinite alternate; }
+.cinemo-2d-happy     { animation: cinemo2dHop .4s ease-out infinite alternate; }
+.cinemo-2d-sad       { transform: rotate(-4deg) translateY(4px); }
+@keyframes cinemo2dSway {
+  from { transform: rotate(-3deg); }
+  to   { transform: rotate(3deg); }
+}
+@keyframes cinemo2dDance {
+  from { transform: rotate(-9deg) translateY(0) scaleY(.96); }
+  to   { transform: rotate(9deg) translateY(-10px) scaleY(1.03); }
+}
+@keyframes cinemo2dHop {
+  from { transform: translateY(0) scaleY(.95); }
+  to   { transform: translateY(-14px) scaleY(1.03); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cinemo-fade-in,
+  .cinemo-bubble,
+  .cinemo-note,
+  .cinemo-2d { animation: none !important; }
+}
