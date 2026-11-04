@@ -3,14 +3,14 @@
 今日の出来事や気分を日記のように書くと、その気持ちに合う映画を3本、理由付きですすめてくれる Web アプリです。
 3D のキャラクター「シネモ」が、映画を選んでいる間は踊りながら待ってくれます。
 
-- 本番: https://cinemo-front.vercel.app/search
-- 画面は `/search` だけです（トップページ `/` はありません）
+- 本番: https://cinemo-front.vercel.app/
+- 以前の URL（`/search`）は、トップ（`/`）へ転送されます
 
 ## 主な機能
 
 - **気分から映画を推薦**: 文章から感情を読み取り、感情タグの付いた映画の中から AI が3本選び、すすめる理由を添えて返します
 - **3D のシネモ**: 入力待ちはリズムを取り、検索中は踊り、結果が出たら喜び、エラーではしょんぼりします。WebGL が使えない環境では 2D のイラストで表示します
-- **配信サービスのリンク**: `/search?streaming=true` で開いたときだけ、各映画の配信先（日本）を表示します
+- **配信サービスのリンク**: `/?streaming=true` で開いたときだけ、各映画の配信先（日本）を表示します
 
 ## 技術構成
 
@@ -27,7 +27,7 @@
 ## 推薦の仕組み
 
 ```
-画面（/search）
+画面（/）
   └─ POST /api/recommend  { mood: "今日の気分の文章" }
        1. 感情抽出   … 感情マスタ（24種類）から、文章に近い感情を AI が最大3つ選ぶ
        2. 候補の集計 … 感情の順位に重み（3・2・1）を付けて、感情タグが合う映画を DB から集める
@@ -83,7 +83,7 @@ RECOMMEND_MODEL=google/gemini-2.5-flash-lite
 npm run dev
 ```
 
-http://localhost:3000/search を開きます。
+http://localhost:3000 を開きます。
 
 | コマンド | 内容 |
 |---|---|
@@ -143,7 +143,7 @@ Gemini Live API を使った音声会話は、費用を抑えるため一旦廃�
 git checkout d93b098^ -- contexts hooks lib/worklets lib/genai-live-client.ts lib/audio-recorder.ts lib/audio-streamer.ts lib/audioworklet-registry.ts lib/store-logger.ts lib/utils.ts app/providers.tsx app/types.ts app/api/auth-token app/api/summarize-conversation
 ```
 
-あわせて、`app/layout.tsx` と `app/search/page.tsx` の音声会話の部分を `d93b098` の差分を見ながら戻し、`@google/genai`・`eventemitter3`・`lodash`・`zustand` を入れ直してください。
+あわせて、`app/layout.tsx` と `app/page.tsx`（`d93b098` の時点では `app/search/page.tsx`）の音声会話の部分を `d93b098` の差分を見ながら戻し、`@google/genai`・`eventemitter3`・`lodash`・`zustand` を入れ直してください。
 Gemini の API キーは漏えい扱いで無効になっているので、新しいキーが必要です。
 3D のシネモは、声の大きさに合わせて口を動かす仕組みを残してあります（`components/cinemo/cinemo-stage.tsx` の `speakingVolume` / `listeningVolume`）。
 
