@@ -11,6 +11,7 @@ import Image from "next/image";
 import { StreamingLinks } from "@/components/streaming-links";
 import { useSearchParams } from "next/navigation";
 import { CinemoStage, type CinemoMood } from "@/components/cinemo/cinemo-stage";
+import type { RecommendItem, RecommendResponse } from "@/lib/recommend-types";
 
 /** 任意の速度でスクロール（CSS smooth より滑らかに） */
 function smoothScrollTo(targetY: number, duration = 1200) {
@@ -152,19 +153,6 @@ function HeroOverlay({
     </section>
   );
 }
-
-type RecommendItem = {
-  title: string | null;
-  posterUrl: string | null;
-  reason: string | null;
-  tmdbId: number | null;
-  duration: number | null;
-  rating: number | null;
-  genres: string[];
-  emotionTags: string[];
-  origin: string | null;
-};
-type RecommendResponse = { items: RecommendItem[] };
 
 const EXAMPLES = [
   "上司に褒められて嬉しい一日だった",
