@@ -10,7 +10,7 @@
 
 - **気分から映画を推薦**: 文章から感情を読み取り、感情タグの付いた映画の中から AI が3本選び、すすめる理由を添えて返します
 - **3D のシネモ**: 入力待ちはリズムを取り、検索中は踊り、結果が出たら喜び、エラーではしょんぼりします。WebGL が使えない環境では 2D のイラストで表示します
-- **配信サービスのリンク**: `/?streaming=true` で開いたときだけ、各映画の配信先（日本）を表示します
+- **配信サービスのリンク**: 推薦された各映画を、日本で観られる配信サービス（Netflix、Prime Video など）へのリンクを表示します。`RAPIDAPI_KEY` が未設定のときや取得に失敗したときは表示しません
 
 ## 技術構成
 
@@ -51,6 +51,9 @@
 | `lib/server/ai.ts` | 使うモデルと AI 呼び出しの設定 |
 | `lib/server/db.ts` | DB 接続 |
 | `lib/recommend-types.ts` | API のレスポンスの型（画面と共有） |
+| `app/api/streaming/[tmdbId]/route.ts` | 配信サービスの API（成功した結果は CDN に1日キャッシュ） |
+| `lib/server/streaming.ts` | Streaming Availability API（RapidAPI）の呼び出し |
+| `components/streaming-links.tsx` | 配信サービスのリンクの表示 |
 
 ### 使っているテーブル（`cinemo` スキーマ）
 
@@ -77,6 +80,8 @@ DATABASE_URL=postgresql://<user>:<password>@<host>:6543/postgres
 AI_GATEWAY_API_KEY=
 # 使うモデル（省略すると anthropic/claude-haiku-5.5）
 RECOMMEND_MODEL=google/gemini-2.5-flash-lite
+# 配信情報（Streaming Availability API / RapidAPI）のキー（省略すると配信リンクを表示しない）
+RAPIDAPI_KEY=
 ```
 
 ```bash
@@ -101,6 +106,7 @@ http://localhost:3000 を開きます。
 | `DATABASE_URL` | 必須 | Supabase（Postgres）の接続文字列。transaction pooler はプリペアドステートメントに対応していないため、コード側で `prepare: false` にしています |
 | `AI_GATEWAY_API_KEY` | ローカルのみ | Vercel AI Gateway のキー。Vercel 上では OIDC で自動的に認証されるので不要です |
 | `RECOMMEND_MODEL` | 任意 | 推薦に使うモデル（AI Gateway のモデル ID）。省略すると `anthropic/claude-haiku-5.5` |
+| `RAPIDAPI_KEY` | 任意 | 配信情報を取得する Streaming Availability API（RapidAPI）のキー。サーバー側だけで使い、ブラウザには渡しません。省略すると配信リンクを表示しません |
 
 ### モデルについて
 
@@ -112,7 +118,7 @@ http://localhost:3000 を開きます。
 
 `main` にマージすると本番にデプロイされます。
 
-1. Vercel のプロジェクトの Settings → Environment Variables に、`DATABASE_URL` と `RECOMMEND_MODEL` を **Production と Preview の両方**に設定します
+1. Vercel のプロジェクトの Settings → Environment Variables に、`DATABASE_URL`・`RECOMMEND_MODEL`・`RAPIDAPI_KEY` を **Production と Preview の両方**に設定します
 2. 環境変数は**新しいデプロイから反映**されます。変更したら Redeploy してください
 3. `/api/recommend` は誰でも呼べるので、AI Gateway の予算（利用額の上限）を設定しておくと安心です
 
@@ -149,6 +155,5 @@ Gemini の API キーは漏えい扱いで無効になっているので、新�
 
 ## 既知の課題
 
-- 配信情報の取得（`lib/streaming.ts`）は、RapidAPI のキーをコードに直接書いてブラウザから呼んでいます。サーバー側の API に移して、キーを環境変数にする必要があります
 - API は `country` / `genres` / `limit` を受け取りますが、画面には入力欄がなく固定値（空・3）を送っていて、検索にも使っていません
 - レスポンスの `genres` と `emotionTags` は、まだ空の配列です
