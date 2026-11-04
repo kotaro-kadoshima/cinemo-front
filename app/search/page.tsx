@@ -10,8 +10,6 @@ import {
 import Image from "next/image";
 import { StreamingLinks } from "@/components/streaming-links";
 import { useSearchParams } from "next/navigation";
-import { useLiveAPIContext } from "../../contexts/LiveAPIContext";
-import { AudioRecorder } from "@/lib/audio-recorder";
 import { CinemoStage, type CinemoMood } from "@/components/cinemo/cinemo-stage";
 
 /** 任意の速度でスクロール（CSS smooth より滑らかに） */
@@ -194,7 +192,6 @@ function SearchPageContent() {
   const [overlayPhase, setOverlayPhase] = useState<"idle" | "leaving" | "gone">(
     "idle"
   );
-  const [inputMode, setInputMode] = useState<"text" | "voice">("text");
   const formHideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const searchParams = useSearchParams();
   const showStreaming = searchParams.get("streaming") === "true";
@@ -265,14 +262,7 @@ function SearchPageContent() {
     e.preventDefault();
 
     const mood = text.trim();
-
-    // 音声会話中の場合は何もしない（会話終了時に自動で検索される）
-    if (connected) {
-      return;
-    }
-
-    // テキストモードでテキストが空の場合はエラー
-    if (inputMode === "text" && !mood) {
+    if (!mood) {
       setError("今日の出来事や気分を入力してください。");
       return;
     }
@@ -294,39 +284,6 @@ function SearchPageContent() {
       smoothScrollTo(0, 900);
     }, 800);
   }
-
-  const connectButtonRef = useRef<HTMLButtonElement>(null);
-  const {
-    client,
-    connected,
-    connect,
-    disconnect,
-    volume: cinemoVoiceVolume,
-    getConversationAsText,
-    clearConversationHistory,
-  } = useLiveAPIContext();
-
-  // 音声会話処理の state
-  const [inVolume, setInVolume] = useState(0);
-  const [audioRecorder] = useState(() => {
-    // SSR環境では空のオブジェクトを返す
-    if (typeof window === "undefined") {
-      return null;
-    }
-    return new AudioRecorder();
-  });
-  const [wasConnected, setWasConnected] = useState(false);
-  const [isSummarizing, setIsSummarizing] = useState(false);
-
-  useEffect(() => {
-    if (!connected && connectButtonRef.current) {
-      connectButtonRef.current.focus();
-    }
-    // 音声会話開始時にエラーメッセージをクリア
-    if (connected) {
-      setError(null);
-    }
-  }, [connected]);
 
   // 映画検索を実行する関数
   const handleMovieSearch = useCallback(async (mood: string) => {
@@ -369,146 +326,26 @@ function SearchPageContent() {
     }
   }, [country, genres, limit]);
 
-  // 会話を要約してテキストエリアに設定する関数
-  const summarizeAndSetText = useCallback(async (conversationText: string) => {
-    setIsSummarizing(true);
-    let handedOffToSearch = false;
-    try {
-      const response = await fetch('/api/summarize-conversation', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ conversation: conversationText }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
-      }
-
-      const data = await response.json();
-      if (data.summary) {
-        setText(data.summary);
-        handedOffToSearch = true;
-        // 要約完了後、少し待ってから映画検索を促す
-        setTimeout(() => {
-          setIsSummarizing(false);
-          if (data.summary.trim()) {
-            // 自動的に映画検索を実行
-            handleMovieSearch(data.summary.trim());
-          }
-        }, 1000);
-      } else {
-        // 要約に失敗した場合は元の会話をそのまま使用
-        setText(conversationText);
-      }
-    } catch (error) {
-      console.error('Failed to summarize conversation:', error);
-      // 要約に失敗した場合は元の会話をそのまま使用
-      setText(conversationText);
-    } finally {
-      if (!handedOffToSearch) setIsSummarizing(false);
-    }
-  }, [setText, handleMovieSearch]);
-
-  // 音声接続が切断された時に会話履歴をGeminiで要約してテキストエリアに設定
-  useEffect(() => {
-    if (wasConnected && !connected) {
-      // 接続が切断された時
-      const conversationText = getConversationAsText();
-      if (conversationText.trim()) {
-        // テキストモードに切り替えてから要約を設定
-        setInputMode("text");
-        // 会話を要約してからテキストエリアに設定
-        summarizeAndSetText(conversationText);
-        // 会話履歴をクリア（次回の会話のため）
-        clearConversationHistory();
-      }
-    }
-    setWasConnected(connected);
-  }, [connected, wasConnected, getConversationAsText, clearConversationHistory, summarizeAndSetText]);
-  useEffect(() => {
-    document.documentElement.style.setProperty(
-      "--volume",
-      `${Math.max(5, Math.min(inVolume * 200, 8))}px`
-    );
-  }, [inVolume]);
-
-  useEffect(() => {
-    const onData = (base64: string) => {
-      client.sendRealtimeInput([
-        {
-          mimeType: "audio/pcm;rate=16000",
-          data: base64,
-        },
-      ]);
-    };
-
-    const startAudioRecording = async () => {
-      try {
-        if (audioRecorder) {
-          audioRecorder.on("data", onData).on("volume", setInVolume);
-          await audioRecorder.start();
-        }
-      } catch (error) {
-        console.error("Failed to start audio recording:", error);
-        // 音声録音開始に失敗した場合は接続を切断
-        if (connected) {
-          disconnect();
-        }
-      }
-    };
-
-    if (connected && audioRecorder) {
-      startAudioRecording();
-    } else if (audioRecorder) {
-      audioRecorder.stop();
-    }
-    return () => {
-      if (audioRecorder) {
-        audioRecorder.off("data", onData).off("volume", setInVolume);
-      }
-    };
-  }, [connected, client, audioRecorder, disconnect]);
-
-  // コンポーネントアンマウント時のクリーンアップ
-  useEffect(() => {
-    return () => {
-      if (audioRecorder) {
-        audioRecorder.stop();
-      }
-    };
-  }, [audioRecorder]);
-
-  // シネモの気分：待ち時間は踊る、会話中は聞く、結果が出たら喜ぶ
-  const cinemoMood: CinemoMood =
-    loading || isSummarizing
-      ? "dancing"
-      : error
-        ? "sad"
-        : connected
-          ? "listening"
-          : results && results.length > 0 && overlayPhase === "idle"
-            ? "happy"
-            : "idle";
+  // シネモの気分：待ち時間は踊る、結果が出たら喜ぶ
+  const cinemoMood: CinemoMood = loading
+    ? "dancing"
+    : error
+      ? "sad"
+      : results && results.length > 0 && overlayPhase === "idle"
+        ? "happy"
+        : "idle";
 
   const cinemoMessage = (() => {
     switch (cinemoMood) {
       case "dancing":
-        return isSummarizing
-          ? "お話をまとめながら踊ってるよ♪"
-          : "踊りながら映画を選んでるよ♪ ちょっと待っててね";
+        return "踊りながら映画を選んでるよ♪ ちょっと待っててね";
       case "sad":
         return "うまくいかなかったみたい…もう一度ためしてみて";
-      case "listening":
-        return "うんうん、聞いてるよ。話し終わったら下のボクをもう一度押してね";
       case "happy":
         return "見つかったよ！下の「表示する」を押してね";
       default:
         if (results) return "気になる映画は見つかった？";
-        return inputMode === "voice"
-          ? "下のボクのボタンを押して、話しかけてね！"
-          : "やあ、シネモだよ！今日のこと、聞かせてね♪";
+        return "やあ、シネモだよ！今日のこと、聞かせてね♪";
     }
   })();
 
@@ -535,8 +372,6 @@ function SearchPageContent() {
         className="mt-2"
         mood={cinemoMood}
         message={cinemoMessage}
-        speakingVolume={connected ? cinemoVoiceVolume : 0}
-        listeningVolume={connected ? inVolume : 0}
       />
 
       {/* 入力カード */}
@@ -572,201 +407,54 @@ function SearchPageContent() {
             <div aria-hidden className="mx-auto mt-3 h-1 w-24 " />
           </div>
 
-          {/* モードセレクタ */}
-          <div className="flex justify-center mb-6">
-            <div className="relative bg-black/60 rounded-2xl p-1 border border-white/20">
-              <div
-                className="absolute top-1 bottom-1 rounded-xl bg-gradient-to-r from-red-600 to-red-500 transition-all duration-300 ease-out"
-                style={{
-                  left: inputMode === "text" ? "4px" : "50%",
-                  width: "calc(50% - 4px)",
+          {/* テキスト入力 */}
+          <div className="space-y-4">
+            <label htmlFor="mood" className="block text-sm text-gray-400">
+              今日の出来事や気分（自由に）
+            </label>
+
+            <div className="rounded-xl border border-white/15 bg-[#0F172A]/60 p-2">
+              <textarea
+                id="mood"
+                rows={5}
+                value={text}
+                onChange={(e) => {
+                  setText(e.target.value);
+                  if (error) setError(null);
                 }}
+                placeholder={`例：上司に褒められて嬉しかった。\n例：恋人と喧嘩して心がざわざわしてる。\n例：仕事でくたびれて何も考えたくない。`}
+                className="w-full resize-none rounded-lg bg-[#111827] text-white/90 px-4 py-3 outline-none placeholder:text-gray-500 focus:ring-2 focus:ring-red-500/60"
               />
-              <div className="relative flex">
+            </div>
+
+            {/* 例文チップ */}
+            <div className="flex flex-wrap gap-2">
+              {EXAMPLES.map((ex) => (
                 <button
+                  key={ex}
                   type="button"
-                  onClick={() => setInputMode("text")}
-                  className={`relative z-10 flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-medium transition-colors duration-200 ${
-                    inputMode === "text"
-                      ? "text-white"
-                      : "text-gray-400 hover:text-gray-200"
-                  }`}
+                  onClick={() => setText(ex)}
+                  className="rounded-full border border-white/15 bg-black/40 px-3 py-1 text-xs text-gray-300 hover:border-red-500 hover:text-white transition-all duration-200 hover:scale-105"
+                  aria-label={`例文: ${ex}`}
                 >
-                  <span className="text-lg">✍️</span>
-                  テキスト入力
+                  {ex}
                 </button>
-                <button
-                  type="button"
-                  onClick={() => setInputMode("voice")}
-                  className={`relative z-10 flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-medium transition-colors duration-200 ${
-                    inputMode === "voice"
-                      ? "text-white"
-                      : "text-gray-400 hover:text-gray-200"
-                  }`}
-                >
-                  <span className="text-lg">🎤</span>
-                  音声会話
-                </button>
-              </div>
+              ))}
             </div>
           </div>
 
-          {/* テキスト入力モード */}
-          {inputMode === "text" && (
-            <div className="space-y-4">
-              <label htmlFor="mood" className="block text-sm text-gray-400">
-                今日の出来事や気分（自由に）
-              </label>
-
-              <div className="rounded-xl border border-white/15 bg-[#0F172A]/60 p-2">
-                <textarea
-                  id="mood"
-                  rows={5}
-                  value={text}
-                  onChange={(e) => {
-                    setText(e.target.value);
-                    if (error) setError(null);
-                  }}
-                  placeholder={`例：上司に褒められて嬉しかった。\n例：恋人と喧嘩して心がざわざわしてる。\n例：仕事でくたびれて何も考えたくない。`}
-                  className="w-full resize-none rounded-lg bg-[#111827] text-white/90 px-4 py-3 outline-none placeholder:text-gray-500 focus:ring-2 focus:ring-red-500/60"
-                />
-              </div>
-
-              {/* 例文チップ */}
-              <div className="flex flex-wrap gap-2">
-                {EXAMPLES.map((ex) => (
-                  <button
-                    key={ex}
-                    type="button"
-                    onClick={() => setText(ex)}
-                    className="rounded-full border border-white/15 bg-black/40 px-3 py-1 text-xs text-gray-300 hover:border-red-500 hover:text-white transition-all duration-200 hover:scale-105"
-                    aria-label={`例文: ${ex}`}
-                  >
-                    {ex}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* 音声会話モード */}
-          {inputMode === "voice" && (
-            <div className="space-y-6">
-              <div className="text-center">
-                <h3 className="text-lg font-medium text-gray-200 mb-2">
-                  シネモと音声で会話しましょう
-                </h3>
-                <p className="text-sm text-gray-400">
-                  シネモがあなたの気持ちを聞いてくれます
-                  <br />
-                  <span className="text-xs text-gray-500">
-                    会話終了後、内容が自動でテキスト欄に入力され映画を探します
-                  </span>
-                </p>
-              </div>
-
-              {/* メイン音声ボタン */}
-              <div className="flex flex-col items-center gap-4">
-                <div className="relative">
-                  <button
-                    type="button"
-                    ref={connectButtonRef}
-                    className={`relative inline-flex items-center justify-center rounded-full transition-all duration-300 shadow-2xl w-20 h-20 focus:outline-none focus:ring-4 overflow-hidden ${
-                      connected
-                        ? "focus:ring-green-400/50 animate-pulse"
-                        : "focus:ring-red-400/50 hover:scale-105"
-                    }`}
-                    onClick={connected ? disconnect : connect}
-                    disabled={loading}
-                    title={connected ? "クリックして音声会話を終了（会話内容を要約して映画を探します）" : "クリックして音声会話を開始"}
-                  >
-                    {/* 背景グラデーション */}
-                    <div className={`absolute inset-0 rounded-full transition-all duration-300 ${
-                      connected
-                        ? "bg-gradient-to-b from-green-500 to-green-600 hover:from-green-600 hover:to-green-700"
-                        : "bg-gradient-to-b from-red-500 to-red-600 hover:from-red-600 hover:to-red-700"
-                    }`} />
-
-                    {/* Cinemo画像 */}
-                    <div className="relative z-10 w-20 h-20 rounded-full overflow-hidden bg-white/90 flex items-center justify-center">
-                      <Image
-                        src="/cinemo.png"
-                        alt="Cinemo"
-                        width={112}
-                        height={112}
-                        className="w-28 h-28 object-contain"
-                      />
-                    </div>
-
-                    {/* 接続時のオーバーレイ */}
-                    {connected && (
-                      <>
-                        <div className="absolute inset-0 rounded-full bg-green-400/30 animate-ping" />
-                        <div className="absolute top-1 right-1 w-4 h-4 bg-red-500 rounded-full flex items-center justify-center">
-                          <div className="w-2 h-2 bg-white rounded-full animate-pulse" />
-                        </div>
-                      </>
-                    )}
-                  </button>
-                </div>
-
-                {/* 接続状態テキスト */}
-                <div className="text-center">
-                  <div className={`text-sm font-medium ${connected ? "text-green-400" : "text-gray-400"}`}>
-                    {connected ? "接続中 - お話しください" : "クリックして音声会話を開始"}
-                  </div>
-                  {connected && (
-                    <div className="mt-2 text-xs text-gray-500">
-                      <div className="flex items-center justify-center gap-2">
-                        <span>🔴</span>
-                        <span>再度クリックして会話を終了</span>
-                      </div>
-                      <div className="mt-1 text-gray-600">
-                        会話終了後、シネモが内容を要約して映画を探します
-                      </div>
-                    </div>
-                  )}
-                </div>
-
-
-                {/* 音量インジケーター */}
-                {connected && (
-                  <div className="w-48 text-center">
-                    <div className="text-xs text-gray-500 mb-2">音声レベル</div>
-                    <div className="w-full h-2 bg-gray-700 rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-gradient-to-r from-green-400 to-green-500 transition-all duration-100 rounded-full"
-                        style={{ width: `${Math.min(inVolume * 100, 100)}%` }}
-                      />
-                    </div>
-                  </div>
-                )}
-
-                {/* サマライズ中 */}
-                {isSummarizing && (
-                  <div className="text-sm text-blue-400 text-center flex items-center justify-center gap-3 mt-4 p-4 bg-blue-500/10 rounded-xl border border-blue-500/20">
-                    <div className="animate-spin w-4 h-4 border-2 border-blue-400 border-t-transparent rounded-full"></div>
-                    <span>シネモが会話を要約して映画を探しています...</span>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
           {/* 送信ボタン */}
-          {inputMode === "text" && (
-            <div className="mt-6 flex justify-center">
-              <button
-                type="submit"
-                disabled={loading || !text.trim()}
-                className="group relative inline-flex items-center gap-3 rounded-2xl border border-red-500/60 bg-gradient-to-r from-red-600/20 to-red-500/20 px-8 py-4 text-base font-semibold text-red-400 hover:text-white hover:border-red-400 hover:from-red-600/40 hover:to-red-500/40 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300 hover:scale-105 hover:shadow-lg hover:shadow-red-500/20"
-              >
-                <span className="text-xl">🎬</span>
-                <span>この気持ちに合う映画を教えて</span>
-                <div className="absolute inset-0 rounded-2xl bg-gradient-to-r from-red-600/0 to-red-500/0 group-hover:from-red-600/10 group-hover:to-red-500/10 transition-all duration-300" />
-              </button>
-            </div>
-          )}
+          <div className="mt-6 flex justify-center">
+            <button
+              type="submit"
+              disabled={loading || !text.trim()}
+              className="group relative inline-flex items-center gap-3 rounded-2xl border border-red-500/60 bg-gradient-to-r from-red-600/20 to-red-500/20 px-8 py-4 text-base font-semibold text-red-400 hover:text-white hover:border-red-400 hover:from-red-600/40 hover:to-red-500/40 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-300 hover:scale-105 hover:shadow-lg hover:shadow-red-500/20"
+            >
+              <span className="text-xl">🎬</span>
+              <span>この気持ちに合う映画を教えて</span>
+              <div className="absolute inset-0 rounded-2xl bg-gradient-to-r from-red-600/0 to-red-500/0 group-hover:from-red-600/10 group-hover:to-red-500/10 transition-all duration-300" />
+            </button>
+          </div>
 
           {error && (
             <div
