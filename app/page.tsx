@@ -2,14 +2,12 @@
 import {
   useEffect,
   useState,
-  Suspense,
   useRef,
   useCallback,
   useMemo,
 } from "react";
 import Image from "next/image";
 import { StreamingLinks } from "@/components/streaming-links";
-import { useSearchParams } from "next/navigation";
 import { CinemoStage, type CinemoMood } from "@/components/cinemo/cinemo-stage";
 import type { RecommendItem, RecommendResponse } from "@/lib/recommend-types";
 
@@ -164,7 +162,7 @@ const EXAMPLES = [
 ];
 
 
-function SearchPageContent() {
+export default function Page() {
   const [text, setText] = useState("");
   const [posterText, setPosterText] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -181,8 +179,6 @@ function SearchPageContent() {
     "idle"
   );
   const formHideTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const searchParams = useSearchParams();
-  const showStreaming = searchParams.get("streaming") === "true";
 
   // フィルタ設定
   const country = "";
@@ -545,7 +541,7 @@ function SearchPageContent() {
                       {m.origin && <span>lang: {m.origin}</span>}
                     </div>
                     <p className="text-sm text-gray-300 mt-1">{m.reason}</p>
-                    {showStreaming && <StreamingLinks tmdbId={m.tmdbId} />}
+                    <StreamingLinks tmdbId={m.tmdbId} />
                   </article>
                 ))}
               </div>
@@ -567,22 +563,5 @@ function SearchPageContent() {
         </BackZoomReveal>
       )}
     </main>
-  );
-}
-
-export default function Page() {
-  return (
-    <Suspense
-      fallback={
-        <main className="min-h-screen bg-black text-white px-6 py-12 flex items-center justify-center">
-          <div className="text-center">
-            <div className="animate-spin w-8 h-8 border border-gray-500 border-t-transparent rounded-full mx-auto mb-4"></div>
-            <p className="text-gray-400">読み込み中...</p>
-          </div>
-        </main>
-      }
-    >
-      <SearchPageContent />
-    </Suspense>
   );
 }

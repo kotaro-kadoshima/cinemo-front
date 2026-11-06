@@ -15,7 +15,7 @@ const nextConfig: NextConfig = {
       },
     ],
   },
-  // 画面は以前 /search にあったので、古いリンクやブックマークはトップへ転送する（?streaming=true などのクエリもそのまま引き継がれる）
+  // 画面は以前 /search にあったので、古いリンクやブックマークはトップへ転送する（クエリもそのまま引き継がれる）
   async redirects() {
     return [{ source: '/search', destination: '/', permanent: true }];
   },

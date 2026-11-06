@@ -1,53 +1,20 @@
-interface StreamingService {
-  service: {
-    id: string;
-    name: string;
-    imageSet?: {
-      lightThemeImage: string;
-      darkThemeImage: string;
-    };
-  };
-  streamingType: string;
+// 配信サービスの表示用の型と部品（ブラウザ側で使う）。
+// 配信情報の取得は API キーが必要なので、サーバー側（lib/server/streaming.ts）で行う。
+
+/** 日本で観られる配信サービス */
+export type StreamingLink = {
+  /** サービスの ID（netflix, prime など） */
+  id: string;
+  name: string;
+  /** subscription（見放題）/ rent（レンタル）/ buy（購入）など */
+  type: string;
   link: string;
-}
+};
 
-interface StreamingData {
-  id: number;
-  imdbId: string;
-  tmdbId: number;
-  title: string;
-  streamingOptions: {
-    jp: StreamingService[];
-  };
-}
-
-const RAPIDAPI_KEY = '357787d468msh70323279ec3f7e2p15daafjsn2474a508ab14';
-
-export async function fetchStreamingInfo(tmdbId: number): Promise<StreamingService[]> {
-  try {
-    const response = await fetch(
-      `https://streaming-availability.p.rapidapi.com/shows/movie/${tmdbId}?country=jp`,
-      {
-        method: 'GET',
-        headers: {
-          'x-rapidapi-key': RAPIDAPI_KEY,
-          'x-rapidapi-host': 'streaming-availability.p.rapidapi.com',
-        },
-      }
-    );
-
-    if (!response.ok) {
-      console.error('Streaming API error:', response.status);
-      return [];
-    }
-
-    const data: StreamingData = await response.json();
-    return data.streamingOptions?.jp || [];
-  } catch (error) {
-    console.error('Error fetching streaming info:', error);
-    return [];
-  }
-}
+/** /api/streaming/[tmdbId] のレスポンス。unavailable はキー未設定や API の失敗で、何も表示しない */
+export type StreamingResponse =
+  | { status: "ok"; services: StreamingLink[] }
+  | { status: "unavailable" };
 
 export function getServiceDisplayName(serviceId: string): string {
   const serviceNames: Record<string, string> = {

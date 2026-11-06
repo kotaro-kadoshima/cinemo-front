@@ -1,106 +1,77 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { fetchStreamingInfo, getServiceDisplayName, getServiceIcon } from '@/lib/streaming';
+import {
+  getServiceDisplayName,
+  getServiceIcon,
+  type StreamingLink,
+  type StreamingResponse,
+} from '@/lib/streaming';
 
-interface StreamingService {
-  service: {
-    id: string;
-    name: string;
-    imageSet?: {
-      lightThemeImage: string;
-      darkThemeImage: string;
-    };
-  };
-  streamingType: string;
-  link: string;
-}
+const TYPE_LABELS: Record<string, string> = {
+  subscription: '見放題',
+  rent: 'レンタル',
+  buy: '購入',
+};
 
 interface StreamingLinksProps {
   tmdbId: number | null;
 }
 
+/** 映画を日本で観られる配信サービスへのリンク。取得できなかったときは何も表示しない */
 export function StreamingLinks({ tmdbId }: StreamingLinksProps) {
-  const [services, setServices] = useState<StreamingService[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [loaded, setLoaded] = useState(false);
+  // null は「読み込み中」または「取得できなかった（キー未設定・エラー）」で、どちらも表示しない
+  const [services, setServices] = useState<StreamingLink[] | null>(null);
 
   useEffect(() => {
-    if (!tmdbId || loaded) return;
+    if (!tmdbId) return;
+    const controller = new AbortController();
+    fetch(`/api/streaming/${tmdbId}`, { signal: controller.signal })
+      .then((res) => (res.ok ? (res.json() as Promise<StreamingResponse>) : null))
+      .then((data) => {
+        if (data?.status === 'ok') setServices(data.services);
+      })
+      .catch(() => {
+        // 取得できなかったときは何も表示しない
+      });
+    return () => controller.abort();
+  }, [tmdbId]);
 
-    const loadStreamingInfo = async () => {
-      setLoading(true);
-      try {
-        const streamingServices = await fetchStreamingInfo(tmdbId);
-        setServices(streamingServices);
-        setLoaded(true);
-      } catch (error) {
-        console.error('Error loading streaming info:', error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    // 少し遅延させて非同期で読み込み
-    const timeoutId = setTimeout(loadStreamingInfo, 500);
-    return () => clearTimeout(timeoutId);
-  }, [tmdbId, loaded]);
-
-  if (!tmdbId) return null;
-
-  if (loading) {
-    return (
-      <div className="mt-3 flex items-center gap-2 text-xs text-gray-400">
-        <div className="animate-spin w-3 h-3 border border-gray-500 border-t-transparent rounded-full"></div>
-        配信情報を確認中...
-      </div>
-    );
-  }
+  if (!tmdbId || services === null) return null;
 
   if (services.length === 0) {
-    return loaded ? (
-      <div className="mt-3 text-xs text-gray-500">
-        配信情報なし
-      </div>
-    ) : null;
+    return <div className="mt-3 text-xs text-gray-500">配信情報なし</div>;
   }
-
-  // 重複した配信サイトを除去（同じservice.idの場合、最初のもののみ残す）
-  const uniqueServices = services.filter((service, index, array) => 
-    array.findIndex(s => s.service.id === service.service.id) === index
-  );
 
   return (
     <div className="mt-3">
       <div className="text-xs text-gray-400 mb-2">配信中：</div>
       <div className="flex flex-wrap gap-2">
-        {uniqueServices.map((service, index) => (
-          <a
-            key={`${service.service.id}-${index}`}
-            href={service.link}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-1 px-2 py-1 bg-black/40 hover:bg-black/60 border border-white/20 hover:border-white/40 rounded-md text-xs text-gray-300 hover:text-white transition-all duration-200 hover:scale-105"
-            title={`${getServiceDisplayName(service.service.id)}で視聴`}
-          >
-            <span className="text-sm flex items-center" aria-hidden="true">
-              {getServiceIcon(service.service.id).startsWith('data:image/') ? (
-                <img 
-                  src={getServiceIcon(service.service.id)} 
-                  alt={getServiceDisplayName(service.service.id)}
-                  className="w-4 h-4"
-                />
-              ) : (
-                getServiceIcon(service.service.id)
-              )}
-            </span>
-            <span className="font-medium">
-              {getServiceDisplayName(service.service.id)}
-            </span>
-            <span className="text-xs opacity-60">
-              {service.streamingType === 'subscription' ? '見放題' : service.streamingType === 'rent' ? 'レンタル' : service.streamingType === 'buy' ? '購入' : ''}
-            </span>
-          </a>
-        ))}
+        {services.map((service) => {
+          const name = getServiceDisplayName(service.id);
+          const icon = getServiceIcon(service.id);
+          return (
+            <a
+              key={service.id}
+              href={service.link}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 px-2 py-1 bg-black/40 hover:bg-black/60 border border-white/20 hover:border-white/40 rounded-md text-xs text-gray-300 hover:text-white transition-all duration-200 hover:scale-105"
+              title={`${name}で視聴`}
+            >
+              <span className="text-sm flex items-center" aria-hidden="true">
+                {icon.startsWith('data:image/') ? (
+                  // 埋め込みの小さなアイコン（data URI）なので、画像最適化は不要
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={icon} alt="" className="w-4 h-4" />
+                ) : (
+                  icon
+                )}
+              </span>
+              <span className="font-medium">{name}</span>
+              <span className="text-xs opacity-60">{TYPE_LABELS[service.type] ?? ''}</span>
+            </a>
+          );
+        })}
       </div>
     </div>
   );
