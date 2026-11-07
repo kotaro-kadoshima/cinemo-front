@@ -12,7 +12,7 @@
     "@react-three/fiber": "^9.8.1",
     "@vercel/analytics": "^2.0.1",
     "ai": "^7.0.162",
-    "next": "15.5.27",
+    "next": "15.5.29",
     "postgres": "^4.0.0",
     "react": "19.1.0",
     "react-dom": "19.1.0",
@@ -27,7 +27,7 @@
     "@types/react-dom": "^19",
     "@types/three": "^0.186.0",
     "eslint": "^9",
-    "eslint-config-next": "15.5.27",
+    "eslint-config-next": "15.5.29",
     "tailwindcss": "^4",
     "typescript": "^5"
   }
